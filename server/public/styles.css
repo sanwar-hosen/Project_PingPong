@@ -1,0 +1,50 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   PingPong Dashboard Styles — Phase 3 placeholder
+   Full styling will be implemented in Phase 3 (Dashboard — List View)
+───────────────────────────────────────────────────────────────────────────── */
+
+/* Base reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+  background: #0f0f13;
+  color: #e8e8f0;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.site-header {
+  background: #1a1a24;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #2a2a3a;
+}
+
+.brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #7c6af7;
+  text-decoration: none;
+}
+
+.site-footer {
+  text-align: center;
+  padding: 2rem;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.placeholder-notice {
+  color: #666;
+  font-style: italic;
+  margin-top: 1rem;
+}

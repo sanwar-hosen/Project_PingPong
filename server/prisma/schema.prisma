@@ -1,0 +1,51 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PingPong — Prisma Schema
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Email
+// Represents one tracked outgoing email.
+// id = the UUID embedded in the pixel URL (/pixel/:id.gif)
+// ─────────────────────────────────────────────────────────────────────────────
+model Email {
+  id        String   @id @default(uuid())
+  subject   String?                         // Optional — filled by POST /api/emails pre-registration
+  recipient String?                         // Primary recipient email or comma-joined list
+  sentAt    DateTime                        // Set to now() on auto-create; overridable via API
+  createdAt DateTime @default(now())
+
+  // Relations
+  opens     OpenEvent[]
+
+  @@map("emails")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OpenEvent
+// One row per pixel load = one "open" of the parent email.
+// ─────────────────────────────────────────────────────────────────────────────
+model OpenEvent {
+  id              String   @id @default(uuid())
+  emailId         String                           // FK → Email.id
+  openedAt        DateTime @default(now())
+  ipAddress       String
+  userAgent       String
+  approxLocation  String?                          // Derived from IP via ip-api.com; null if lookup fails
+  recipientHint   String?                          // Reserved for future per-recipient attribution (v2+)
+
+  // Relations
+  email           Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])          // Fast lookup of all opens for a given email
+  @@index([openedAt])         // Fast time-range queries
+  @@map("open_events")
+}
