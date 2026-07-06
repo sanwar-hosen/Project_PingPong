@@ -1,0 +1,54 @@
+# PingPong — Fly.io deployment configuration
+# Documentation: https://fly.io/docs/reference/configuration/
+#
+# USAGE:
+#   1. Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
+#   2. flyctl auth signup  (or flyctl auth login)
+#   3. flyctl launch --no-deploy  (run from /server directory — creates the app, skip initial deploy)
+#   4. flyctl postgres create  (creates a free managed Postgres and links it)
+#   5. flyctl secrets set DASHBOARD_SECRET="your-secret" BASE_URL="https://your-app.fly.dev" NODE_ENV="production"
+#   6. flyctl deploy  (builds and deploys)
+#
+# The `release_command` below runs `prisma migrate deploy` before
+# the new version goes live — migrations are fully automatic.
+# ─────────────────────────────────────────────────────────────────────────────
+
+app = "pingpong"          # Change this to your app name from `flyctl launch`
+primary_region = "sin"   # Singapore — change to your nearest region if desired
+                          # Options: iad (US East), lax (US West), lhr (London),
+                          #          fra (Frankfurt), nrt (Tokyo), syd (Sydney)
+
+[build]
+  # Fly.io auto-detects Node.js via package.json — no Dockerfile needed.
+  # `npm install` and `prisma generate` (via postinstall) run automatically.
+
+[deploy]
+  # Runs AFTER build but BEFORE traffic switches to the new version.
+  # This is the safe, zero-downtime way to run Prisma migrations on Fly.io.
+  release_command = "npx prisma migrate deploy"
+
+[env]
+  NODE_ENV = "production"
+  # Do NOT put secrets here. Use: flyctl secrets set KEY=value
+  # Required secrets:
+  #   DATABASE_URL      — auto-linked after `flyctl postgres attach`
+  #   DASHBOARD_SECRET  — your long random dashboard password
+  #   BASE_URL          — your Fly.io app URL, e.g. https://pingpong.fly.dev
+
+[http_service]
+  internal_port = 3000   # Must match the PORT used in server/src/index.js
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.checks]
+    [http_service.checks.health]
+      grace_period = "10s"
+      interval = "30s"
+      method = "GET"
+      path = "/health"
+      timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"   # Free tier — 256MB RAM, shared CPU

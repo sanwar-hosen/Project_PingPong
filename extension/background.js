@@ -9,6 +9,16 @@
 // bypassing the page's CSP, making it ideal for proxying API requests.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── DEFAULT CONFIGURATION ───────────────────────────────────────────────────
+// These defaults are written to chrome.storage.local on first install.
+// Set the real values via the ⚙ Settings panel in the extension popup.
+// BASE_URL format: https://your-app.fly.dev  OR  https://your-app.up.railway.app
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_CONFIG = {
+  baseUrl: '',           // Empty until configured via popup — extension won't track until set
+  dashboardSecret: ''    // Empty until configured via popup
+};
+
 // Set up dynamic blocking rules to prevent the sender's browser from triggering false opens.
 // This blocks requests to the tracking pixel matching the pattern '*/pixel/*.gif'.
 async function setupBlockingRules() {
@@ -41,12 +51,28 @@ async function setupBlockingRules() {
 setupBlockingRules();
 
 chrome.runtime.onInstalled.addListener(() => {
+  // Seed defaults — only sets values that aren't already saved
+  chrome.storage.local.get(Object.keys(DEFAULT_CONFIG), (existing) => {
+    const toSet = {};
+    for (const [key, val] of Object.entries(DEFAULT_CONFIG)) {
+      if (existing[key] === undefined) {
+        toSet[key] = val;
+      }
+    }
+    if (Object.keys(toSet).length > 0) {
+      chrome.storage.local.set(toSet, () => {
+        console.log('[background] Default config seeded into storage:', toSet);
+      });
+    }
+  });
+
   setupBlockingRules();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   setupBlockingRules();
 });
+
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'registerEmail') {

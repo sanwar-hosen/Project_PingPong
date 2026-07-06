@@ -10,15 +10,15 @@
 //   3. Generating a unique UUID.
 //   4. Injecting the invisible tracking pixel <img> tag.
 //   5. Registering the email metadata asynchronously via background service worker.
+//
+// BASE_URL is read from chrome.storage.local.
+// Configure it once via the ⚙ Settings panel in the extension popup before use.
+// Format: https://your-app.fly.dev  OR  https://your-app.up.railway.app
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Configuration
-// Local development base URL. Changed to Railway domain in Phase 6.
-const BASE_URL = 'http://localhost:3000';
 
 console.log('[PingPong] Content script loaded. Ready to track emails.');
 
-// ── Helper: UUID v4 generator fallback ───────────────────────────────────────
+// ── Helper: UUID v4 generator ────────────────────────────────────────────────
 function generateUUID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -38,8 +38,19 @@ function getComposeContainer(element) {
   return element.closest('div[role="dialog"], .M9, .AD, td.Hp');
 }
 
+// ── Helper: Read baseUrl from chrome.storage.local ───────────────────────────
+// Returns a Promise that resolves with the stored URL, or empty string if not set.
+function getBaseUrl() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('baseUrl', (result) => {
+      resolve((result.baseUrl || '').trim());
+    });
+  });
+}
+
 // ── Core: Process send action and inject pixel ────────────────────────────────
-function handleSendAction(event, composeContainer) {
+// baseUrl is passed in from the storage read so this function stays synchronous.
+function handleSendAction(event, composeContainer, baseUrl) {
   if (!composeContainer) return;
 
   // Prevent double injection if the send event is fired multiple times
@@ -55,7 +66,7 @@ function handleSendAction(event, composeContainer) {
     if (!chrome.runtime || !chrome.runtime.id) {
       isContextValid = false;
     } else {
-      // Accessing a method like getManifest throws an error if the context is invalidated
+      // Accessing getManifest() throws if the context is invalidated
       chrome.runtime.getManifest();
     }
   } catch (e) {
@@ -83,46 +94,44 @@ function handleSendAction(event, composeContainer) {
   const subject = subjectInput ? subjectInput.value.trim() : '';
 
   // 3. Extract Recipients (To, CC, BCC)
-  // Gather from chips containing the [email] attribute
+  // ── Gmail DOM selectors — isolate here for easy future maintenance ──────────
   const emailChips = composeContainer.querySelectorAll('[email]');
   const recipients = Array.from(emailChips)
     .map((el) => el.getAttribute('email').trim())
     .filter(Boolean);
 
-  // Fallback/Supplement: check any input field values for raw typed email addresses
+  // Fallback: check raw input field values
   const textInputs = composeContainer.querySelectorAll(
     'input[type="text"], input[type="email"], input:not([type])'
   );
   textInputs.forEach((input) => {
     const val = input.value.trim();
     if (val && val.includes('@')) {
-      // Split by common delimiters in case of multiple addresses
       const parsed = val.split(/[,;\s]+/).map((p) => p.trim()).filter((p) => p.includes('@'));
       recipients.push(...parsed);
     }
   });
+  // ── End Gmail DOM selectors ─────────────────────────────────────────────────
 
-  // Unique list of recipient email addresses
   const uniqueRecipients = [...new Set(recipients)].join(', ');
 
-  // 4. Check for existing tracking pixel (e.g. from a draft restored after "Undo Send")
+  // 4. Check for existing tracking pixel (e.g. draft restored after "Undo Send")
   const existingPixel = bodyElement.querySelector('img[data-pingpong-pixel]');
   let trackingId;
   let isNewPixel = true;
 
   if (existingPixel) {
     trackingId = existingPixel.getAttribute('data-pingpong-pixel');
-    console.log(`[PingPong] Existing tracking pixel found: ${trackingId}. Reusing it.`);
+    console.log(`[PingPong] Existing pixel found: ${trackingId}. Reusing.`);
     isNewPixel = false;
   } else {
-    // Generate unique tracking ID
     trackingId = generateUUID();
   }
 
   if (isNewPixel) {
     // 5. Build and inject tracking pixel <img> tag
-    const pixelUrl = `${BASE_URL}/pixel/${trackingId}.gif`;
-    
+    const pixelUrl = `${baseUrl}/pixel/${trackingId}.gif`;
+
     const img = document.createElement('img');
     img.src = pixelUrl;
     img.width = 1;
@@ -133,19 +142,18 @@ function handleSendAction(event, composeContainer) {
     img.setAttribute('alt', '');
     img.setAttribute('data-pingpong-pixel', trackingId);
 
-    // Append to the end of the email body
     bodyElement.appendChild(img);
-    console.log(`[PingPong] Injected pixel ${trackingId} for recipients: "${uniqueRecipients || '(none)'}"`);
+    console.log(`[PingPong] Injected pixel ${trackingId} → ${pixelUrl} | recipients: "${uniqueRecipients || '(none)'}"`);
   }
 
-  // Mark the compose container to prevent duplicate pixels
+  // Mark compose container to prevent duplicate pixels
   composeContainer.dataset.pingpongInjected = 'true';
 
-  // 6. Asynchronously register email metadata to the backend via background script
+  // 6. Asynchronously register email metadata via background script
   try {
     chrome.runtime.sendMessage({
       action: 'registerEmail',
-      baseUrl: BASE_URL,
+      baseUrl,
       data: {
         trackingId,
         subject: subject || '(No Subject)',
@@ -153,48 +161,59 @@ function handleSendAction(event, composeContainer) {
       }
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[PingPong] Error sending message to background script:', chrome.runtime.lastError.message);
+        console.error('[PingPong] Error sending message to background:', chrome.runtime.lastError.message);
         return;
       }
       if (response && response.success) {
-        console.log('[PingPong] Email successfully registered in backend database.');
+        console.log('[PingPong] Email registered in backend.');
       } else {
-        console.error('[PingPong] Failed to register email metadata:', response?.error || 'Unknown error');
+        console.error('[PingPong] Failed to register email:', response?.error || 'Unknown error');
       }
     });
   } catch (err) {
-    console.error('[PingPong] Failed to send message to background script (context invalidated):', err);
+    console.error('[PingPong] Failed to send message to background (context invalidated):', err);
     alert('PingPong Email Tracker: The extension context was lost. Please refresh Gmail to continue tracking.');
   }
 }
 
-// ── Event Listener: Capturing clicks on Send buttons ─────────────────────────
+// ── Event Listener: Send button clicks ───────────────────────────────────────
 document.addEventListener('click', (event) => {
-  // Find if click target is a Gmail Send button
-  // Matches aria-label containing "Send" or data-tooltip containing "Send"
+  // ── Gmail Send button selectors — isolate here for easy future maintenance ──
   const sendButton = event.target.closest(
     'div[role="button"][aria-label*="Send"], div[role="button"][data-tooltip*="Send"], div[role="button"].T-I.J-J5-Ji.T-I-KE'
   );
+  // ── End Send button selectors ───────────────────────────────────────────────
 
   if (sendButton) {
     const composeContainer = getComposeContainer(sendButton);
     if (composeContainer) {
       console.log('[PingPong] Send button click intercepted.');
-      handleSendAction(event, composeContainer);
+      getBaseUrl().then((baseUrl) => {
+        if (!baseUrl) {
+          console.warn('[PingPong] Backend URL not configured. Open the extension popup → ⚙ Settings and set your server URL.');
+          return;
+        }
+        handleSendAction(event, composeContainer, baseUrl);
+      });
     }
   }
-}, true); // Use capture phase to run before Gmail's internal click handlers
+}, true); // Capture phase: runs before Gmail's internal click handlers
 
-// ── Event Listener: Keydowns for keyboard shortcuts ─────────────────────────
+// ── Event Listener: Keyboard shortcut (Ctrl+Enter / Cmd+Enter) ───────────────
 document.addEventListener('keydown', (event) => {
-  // Detect Ctrl+Enter or Cmd+Enter
   const isSendShortcut = (event.ctrlKey || event.metaKey) && event.key === 'Enter';
-  
+
   if (isSendShortcut) {
     const composeContainer = getComposeContainer(document.activeElement);
     if (composeContainer) {
       console.log('[PingPong] Keyboard send shortcut intercepted.');
-      handleSendAction(event, composeContainer);
+      getBaseUrl().then((baseUrl) => {
+        if (!baseUrl) {
+          console.warn('[PingPong] Backend URL not configured. Open the extension popup → ⚙ Settings and set your server URL.');
+          return;
+        }
+        handleSendAction(event, composeContainer, baseUrl);
+      });
     }
   }
-}, true); // Use capture phase to execute before send fires
+}, true); // Capture phase: runs before send fires

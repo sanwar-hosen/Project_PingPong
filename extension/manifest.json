@@ -17,7 +17,9 @@
     }
   },
   "permissions": [
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "storage",
+    "tabs"
   ],
   "background": {
     "service_worker": "background.js"
