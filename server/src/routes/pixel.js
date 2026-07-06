@@ -62,43 +62,64 @@ router.get('/:trackingId.gif', async (req, res) => {
 
   // ── Step 2: Log the open event (wrapped in try/catch for reliability) ─────
   try {
-    // Geo-lookup runs concurrently while we do the DB upsert.
-    // We await both, but if geo fails it returns null — no blocking.
-    const [approxLocation] = await Promise.allSettled([
-      geoLookup(ipAddress),
-    ]).then((results) => results.map((r) => (r.status === 'fulfilled' ? r.value : null)));
+    let shouldLog = true;
 
-    // ── Upsert the Email row ──────────────────────────────────────────────
-    // If the extension called POST /api/emails first (the happy path), this
-    // email row already exists. If it didn't (e.g. the extension failed or
-    // was disabled), we auto-create a minimal row so we don't lose the open.
-    await prisma.email.upsert({
-      where: { id: trackingId },
-      create: {
-        id: trackingId,
-        sentAt: new Date(),
-        // subject and recipient left null — may be backfilled later via POST /api/emails
-      },
-      update: {
-        // Don't overwrite existing data if the email was already registered
-      },
-    });
-
-    // ── Insert the OpenEvent ──────────────────────────────────────────────
-    await prisma.openEvent.create({
-      data: {
+    // Check for rapid repeated opens (debounce window of 2 seconds)
+    const lastOpen = await prisma.openEvent.findFirst({
+      where: {
         emailId: trackingId,
         ipAddress,
-        userAgent,
-        approxLocation,   // null if lookup failed — that's fine
-        recipientHint: null, // Reserved for v2 per-recipient attribution
+      },
+      orderBy: {
+        openedAt: 'desc',
       },
     });
 
-    console.log(
-      `[pixel] Open logged | trackingId=${trackingId} | ip=${ipAddress} | location=${approxLocation ?? 'unknown'}`
-    );
+    if (lastOpen && (new Date() - new Date(lastOpen.openedAt)) < 2000) {
+      console.log(
+        `[pixel] Deduplicated rapid repeat open | trackingId=${trackingId} | ip=${ipAddress}`
+      );
+      shouldLog = false;
+    }
 
+    if (shouldLog) {
+      // Geo-lookup runs concurrently while we do the DB upsert.
+      // We await both, but if geo fails it returns null — no blocking.
+      const [approxLocation] = await Promise.allSettled([
+        geoLookup(ipAddress),
+      ]).then((results) => results.map((r) => (r.status === 'fulfilled' ? r.value : null)));
+
+      // ── Upsert the Email row ──────────────────────────────────────────────
+      // If the extension called POST /api/emails first (the happy path), this
+      // email row already exists. If it didn't (e.g. the extension failed or
+      // was disabled), we auto-create a minimal row so we don't lose the open.
+      await prisma.email.upsert({
+        where: { id: trackingId },
+        create: {
+          id: trackingId,
+          sentAt: new Date(),
+          // subject and recipient left null — may be backfilled later via POST /api/emails
+        },
+        update: {
+          // Don't overwrite existing data if the email was already registered
+        },
+      });
+
+      // ── Insert the OpenEvent ──────────────────────────────────────────────
+      await prisma.openEvent.create({
+        data: {
+          emailId: trackingId,
+          ipAddress,
+          userAgent,
+          approxLocation,   // null if lookup failed — that's fine
+          recipientHint: null, // Reserved for v2 per-recipient attribution
+        },
+      });
+
+      console.log(
+        `[pixel] Open logged | trackingId=${trackingId} | ip=${ipAddress} | location=${approxLocation ?? 'unknown'}`
+      );
+    }
   } catch (err) {
     // DB write failed — log the error server-side, but DO NOT surface it
     // to the email client. The GIF must still be returned.

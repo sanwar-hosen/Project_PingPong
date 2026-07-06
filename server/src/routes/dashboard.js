@@ -12,7 +12,7 @@ const prisma = require('../lib/prismaClient');
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Middleware: validates the DASHBOARD_SECRET token from ?key= query param.
+ * Middleware: validates the DASHBOARD_SECRET token from ?key= query param or a session cookie.
  * The secret is read from the DASHBOARD_SECRET environment variable.
  * If missing or mismatched, responds with 401.
  */
@@ -25,13 +25,40 @@ function requireDashboardAuth(req, res, next) {
     return res.status(401).send('Unauthorized — DASHBOARD_SECRET not configured');
   }
 
-  if (req.query.key !== secret) {
-    return res.status(401).send('Unauthorized — invalid or missing ?key= parameter');
+  // Parse cookies manually to avoid external dependencies
+  const cookies = {};
+  const rc = req.headers.cookie;
+  if (rc) {
+    rc.split(';').forEach((cookie) => {
+      const parts = cookie.split('=');
+      const key = parts.shift().trim();
+      const val = parts.join('=');
+      try {
+        cookies[key] = decodeURIComponent(val);
+      } catch (e) {
+        cookies[key] = val;
+      }
+    });
   }
 
-  // Attach the key to res.locals so EJS templates can pass it along in links
-  res.locals.dashboardKey = secret;
-  next();
+  const queryKey = req.query.key;
+  const cookieKey = cookies['pingpong_secret'];
+
+  if (queryKey === secret) {
+    // Set/refresh cookie (30 days expiry)
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieFlags = `Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000${isProduction ? '; Secure' : ''}`;
+    res.setHeader('Set-Cookie', `pingpong_secret=${secret}; ${cookieFlags}`);
+    res.locals.dashboardKey = secret;
+    return next();
+  }
+
+  if (cookieKey === secret) {
+    res.locals.dashboardKey = secret;
+    return next();
+  }
+
+  return res.status(401).send('Unauthorized — invalid or missing ?key= parameter or session cookie');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +82,10 @@ router.get('/', requireDashboardAuth, async (req, res, next) => {
         },
       },
     });
+
+    if (req.query.format === 'json') {
+      return res.json({ emails });
+    }
 
     res.render('list', {
       title: 'Tracked Emails',
@@ -113,6 +144,15 @@ router.get('/email/:id', requireDashboardAuth, async (req, res, next) => {
 
     // Find the max count for scaling bar heights
     const maxDayCount = timelineData.reduce((max, d) => Math.max(max, d.count), 0);
+
+    if (req.query.format === 'json') {
+      return res.json({
+        email,
+        opens: opensWithParsedUA,
+        timelineData,
+        maxDayCount
+      });
+    }
 
     res.render('detail', {
       title: `${email.subject || '(No subject)'} — Detail`,

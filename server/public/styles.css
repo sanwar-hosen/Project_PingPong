@@ -1059,3 +1059,34 @@ body {
     display: none;
   }
 }
+
+/* ── Live Update Animations ────────────────────────────────────────────────── */
+@keyframes highlight-row {
+  0% {
+    background-color: var(--accent-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.row-highlight {
+  animation: highlight-row 2s ease-out;
+}
+
+@keyframes pulse-badge {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+    box-shadow: var(--shadow-glow);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.badge-pulse {
+  animation: pulse-badge 0.8s ease-in-out;
+}

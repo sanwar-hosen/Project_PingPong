@@ -146,4 +146,155 @@
   <% } %>
 </main>
 
+<script>
+  (function() {
+    const emailId = '<%= email.id %>';
+    const dashboardKey = '<%= dashboardKey %>';
+    const pollInterval = 5000; // 5 seconds
+    
+    async function updateDetail() {
+      try {
+        const response = await fetch(`/dashboard/email/${emailId}?format=json&key=${dashboardKey}`);
+        if (!response.ok) {
+          console.error('[Detail Live] Failed to fetch updates, status:', response.status);
+          return;
+        }
+        
+        const data = await response.json();
+        const opens = data.opens || [];
+        
+        // 1. If currently in empty state and we have open events, reload to show chart & tables
+        const emptyState = document.getElementById('detail-empty-state');
+        if (emptyState && opens.length > 0) {
+          location.reload();
+          return;
+        }
+        
+        if (opens.length === 0) return;
+        
+        // 2. Check if opens count has increased
+        const tbody = document.querySelector('#open-events-table tbody');
+        if (!tbody) return;
+        
+        const currentCount = tbody.querySelectorAll('.open-event-row').length;
+        if (opens.length > currentCount) {
+          // Update large open count counter
+          const numDisplay = document.querySelector('.detail-open-number');
+          const labelDisplay = document.querySelector('.detail-open-label');
+          if (numDisplay) numDisplay.textContent = opens.length;
+          if (labelDisplay) labelDisplay.textContent = opens.length === 1 ? 'Open' : 'Opens';
+          
+          // Pulse the open counter badge
+          const displayGroup = document.querySelector('.detail-open-count-display');
+          if (displayGroup) {
+            displayGroup.classList.add('badge-pulse');
+            setTimeout(() => {
+              displayGroup.classList.remove('badge-pulse');
+            }, 2000);
+          }
+          
+          // Update timeline chart
+          if (data.timelineData) {
+            renderTimelineChart(data.timelineData, data.maxDayCount);
+          }
+          
+          // Append new rows
+          for (let i = currentCount; i < opens.length; i++) {
+            const open = opens[i];
+            const tr = document.createElement('tr');
+            tr.className = 'open-event-row row-highlight';
+            tr.id = `open-event-${open.id}`;
+            
+            const openedAtDate = new Date(open.openedAt);
+            const dateStr = openedAtDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+            const timeStr = openedAtDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            let locationHtml = '<span class="location-unknown">Unknown</span>';
+            if (open.approxLocation) {
+              locationHtml = `<span class="location-text" title="${escapeHtml(open.approxLocation)}">📍 ${escapeHtml(open.approxLocation)}</span>`;
+            }
+            
+            const device = open.parsedUA.device;
+            let icon = '🌐';
+            if (device === 'iPhone' || device === 'iPad' || device === 'Android') {
+              icon = '📱';
+            } else if (device === 'macOS') {
+              icon = '💻';
+            } else if (device === 'Windows') {
+              icon = '🖥️';
+            } else if (device === 'Linux') {
+              icon = '🐧';
+            }
+            
+            tr.innerHTML = `
+              <td class="text-center">
+                <span class="open-number-badge">${open.openNumber}</span>
+              </td>
+              <td class="cell-opened-at">
+                <span class="opened-date" title="${openedAtDate.toISOString()}">${dateStr}</span>
+                <span class="opened-time">${timeStr}</span>
+              </td>
+              <td class="cell-location">
+                ${locationHtml}
+              </td>
+              <td class="cell-device">
+                <span class="device-label" title="${escapeHtml(open.userAgent)}">
+                  ${icon} ${escapeHtml(open.parsedUA.label)}
+                </span>
+              </td>
+              <td class="cell-ip col-ip">
+                <code class="ip-address">${escapeHtml(open.ipAddress)}</code>
+              </td>
+            `;
+            
+            tbody.appendChild(tr);
+            
+            // Remove highlight class after animation finishes
+            setTimeout(() => {
+              tr.classList.remove('row-highlight');
+            }, 2000);
+          }
+        }
+      } catch (err) {
+        console.error('[Detail Live] Error polling data:', err);
+      }
+    }
+    
+    function renderTimelineChart(timelineData, maxDayCount) {
+      const container = document.querySelector('.timeline-bars');
+      if (!container) return;
+      
+      let html = '';
+      timelineData.forEach(day => {
+        const pct = maxDayCount > 0 ? Math.max((day.count / maxDayCount) * 100, 8) : 8;
+        const dateObj = new Date(day.date + 'T00:00:00');
+        const dateLabel = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const sText = day.count !== 1 ? 'opens' : 'open';
+        
+        html += `
+          <div class="timeline-bar-group">
+            <div class="timeline-bar-value">${day.count}</div>
+            <div class="timeline-bar" style="height: ${pct}%;" title="${day.date}: ${day.count} ${sText}"></div>
+            <div class="timeline-bar-label">${dateLabel}</div>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    }
+    
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+    
+    // Start polling on page load
+    setInterval(updateDetail, pollInterval);
+  })();
+</script>
+
 <%- include('partials/footer') %>

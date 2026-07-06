@@ -110,4 +110,181 @@
   <% } %>
 </main>
 
+<script>
+  (function() {
+    const dashboardKey = '<%= dashboardKey %>';
+    const pollInterval = 5000; // 5 seconds
+    
+    async function updateDashboard() {
+      try {
+        const response = await fetch(`/dashboard?format=json&key=${dashboardKey}`);
+        if (!response.ok) {
+          console.error('[Dashboard Live] Failed to fetch updates, status:', response.status);
+          return;
+        }
+        
+        const data = await response.json();
+        const emails = data.emails || [];
+        
+        // 1. If currently in empty state and we have emails, reload the page to render the table
+        const emptyState = document.querySelector('.empty-state');
+        if (emptyState && emails.length > 0) {
+          location.reload();
+          return;
+        }
+        
+        if (emails.length === 0) return;
+        
+        // 2. Update Stats Bar
+        const statCards = document.querySelectorAll('.stat-card');
+        if (statCards.length === 3) {
+          const totalEmailsVal = emails.length;
+          const totalOpensVal = emails.reduce((sum, e) => sum + e._count.opens, 0);
+          const emailsOpenedVal = emails.filter(e => e._count.opens > 0).length;
+          
+          updateStatCard(statCards[0], totalEmailsVal);
+          updateStatCard(statCards[1], totalOpensVal);
+          updateStatCard(statCards[2], emailsOpenedVal);
+        }
+        
+        // 3. Update Table Rows
+        const tbody = document.querySelector('#email-list-table tbody');
+        if (!tbody) return;
+        
+        // Loop backwards (oldest to newest in the received list, which is sorted desc by sentAt)
+        // so we prepend them in the correct relative order.
+        for (let i = emails.length - 1; i >= 0; i--) {
+          const email = emails[i];
+          const rowId = `email-row-${email.id}`;
+          const existingRow = document.getElementById(rowId);
+          
+          if (!existingRow) {
+            // New email! Prepend it to the top of the table
+            const tr = document.createElement('tr');
+            tr.className = 'email-row row-highlight';
+            tr.id = rowId;
+            
+            const sentAtDate = new Date(email.sentAt);
+            const dateStr = sentAtDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const timeStr = sentAtDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            
+            const opensCount = email._count.opens;
+            const badgeClass = opensCount > 0 ? 'badge-opened' : 'badge-unopened';
+            
+            let lastOpenedHtml = '<span class="not-opened-yet">Not opened yet</span>';
+            if (email.opens && email.opens.length > 0) {
+              const lastOpenDate = new Date(email.opens[0].openedAt);
+              const loDateStr = lastOpenDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              const loTimeStr = lastOpenDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+              lastOpenedHtml = `
+                <span class="last-opened-date" title="${lastOpenDate.toISOString()}">${loDateStr}</span>
+                <span class="last-opened-time">${loTimeStr}</span>
+              `;
+            }
+            
+            tr.innerHTML = `
+              <td class="cell-subject">
+                <span class="subject-text">${escapeHtml(email.subject || '(No subject)')}</span>
+              </td>
+              <td class="cell-recipient">
+                <span class="recipient-text">${escapeHtml(email.recipient || '(Unknown)')}</span>
+              </td>
+              <td class="cell-sent">
+                <span class="sent-date" title="${sentAtDate.toISOString()}">${dateStr}</span>
+                <span class="sent-time">${timeStr}</span>
+              </td>
+              <td class="cell-opens text-center">
+                <span class="badge ${badgeClass}">${opensCount}</span>
+              </td>
+              <td class="cell-last-opened">
+                ${lastOpenedHtml}
+              </td>
+              <td class="cell-action text-center">
+                <a href="/dashboard/email/${email.id}?key=${dashboardKey}" class="btn-details" id="details-btn-${email.id}">
+                  View Details →
+                </a>
+              </td>
+            `;
+            
+            tbody.insertBefore(tr, tbody.firstChild);
+            
+            // Remove highlight class after animation finishes
+            setTimeout(() => {
+              tr.classList.remove('row-highlight');
+            }, 2000);
+          } else {
+            // Row exists, check for open count updates
+            const badge = existingRow.querySelector('.cell-opens .badge');
+            if (badge) {
+              const currentOpens = parseInt(badge.textContent, 10);
+              const newOpens = email._count.opens;
+              if (newOpens !== currentOpens) {
+                // Update badge text and classes
+                badge.textContent = newOpens;
+                if (newOpens > 0) {
+                  badge.className = 'badge badge-opened badge-pulse';
+                } else {
+                  badge.className = 'badge badge-unopened badge-pulse';
+                }
+                
+                // Highlight the row
+                existingRow.classList.add('row-highlight');
+                
+                // Update "Last Opened" cell
+                const cellLastOpened = existingRow.querySelector('.cell-last-opened');
+                if (cellLastOpened && email.opens && email.opens.length > 0) {
+                  const lastOpenDate = new Date(email.opens[0].openedAt);
+                  const loDateStr = lastOpenDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  const loTimeStr = lastOpenDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                  cellLastOpened.innerHTML = `
+                    <span class="last-opened-date" title="${lastOpenDate.toISOString()}">${loDateStr}</span>
+                    <span class="last-opened-time">${loTimeStr}</span>
+                  `;
+                }
+                
+                // Clear animation classes after they complete
+                setTimeout(() => {
+                  badge.classList.remove('badge-pulse');
+                  existingRow.classList.remove('row-highlight');
+                }, 2000);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Dashboard Live] Error polling data:', err);
+      }
+    }
+    
+    function updateStatCard(card, newValue) {
+      const valElem = card.querySelector('.stat-value');
+      if (valElem) {
+        const currentVal = parseInt(valElem.textContent.replace(/,/g, ''), 10);
+        if (currentVal !== newValue) {
+          valElem.textContent = newValue.toLocaleString();
+          // Add a scale/pulse effect to the value
+          valElem.style.transform = 'scale(1.15)';
+          valElem.style.transition = 'transform 0.2s ease-out';
+          setTimeout(() => {
+            valElem.style.transform = 'scale(1)';
+          }, 200);
+        }
+      }
+    }
+    
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+    
+    // Start polling on page load
+    setInterval(updateDashboard, pollInterval);
+  })();
+</script>
+
 <%- include('partials/footer') %>

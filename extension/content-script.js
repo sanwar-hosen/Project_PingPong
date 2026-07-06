@@ -105,29 +105,41 @@ function handleSendAction(event, composeContainer) {
   // Unique list of recipient email addresses
   const uniqueRecipients = [...new Set(recipients)].join(', ');
 
-  // 4. Generate unique tracking ID
-  const trackingId = generateUUID();
+  // 4. Check for existing tracking pixel (e.g. from a draft restored after "Undo Send")
+  const existingPixel = bodyElement.querySelector('img[data-pingpong-pixel]');
+  let trackingId;
+  let isNewPixel = true;
 
-  // 5. Build and inject tracking pixel <img> tag
-  const pixelUrl = `${BASE_URL}/pixel/${trackingId}.gif`;
-  
-  const img = document.createElement('img');
-  img.src = pixelUrl;
-  img.width = 1;
-  img.height = 1;
-  img.style.display = 'none';
-  img.style.width = '0px';
-  img.style.height = '0px';
-  img.setAttribute('alt', '');
-  img.setAttribute('data-pingpong-pixel', trackingId);
+  if (existingPixel) {
+    trackingId = existingPixel.getAttribute('data-pingpong-pixel');
+    console.log(`[PingPong] Existing tracking pixel found: ${trackingId}. Reusing it.`);
+    isNewPixel = false;
+  } else {
+    // Generate unique tracking ID
+    trackingId = generateUUID();
+  }
 
-  // Append to the end of the email body
-  bodyElement.appendChild(img);
-  
+  if (isNewPixel) {
+    // 5. Build and inject tracking pixel <img> tag
+    const pixelUrl = `${BASE_URL}/pixel/${trackingId}.gif`;
+    
+    const img = document.createElement('img');
+    img.src = pixelUrl;
+    img.width = 1;
+    img.height = 1;
+    img.style.display = 'none';
+    img.style.width = '0px';
+    img.style.height = '0px';
+    img.setAttribute('alt', '');
+    img.setAttribute('data-pingpong-pixel', trackingId);
+
+    // Append to the end of the email body
+    bodyElement.appendChild(img);
+    console.log(`[PingPong] Injected pixel ${trackingId} for recipients: "${uniqueRecipients || '(none)'}"`);
+  }
+
   // Mark the compose container to prevent duplicate pixels
   composeContainer.dataset.pingpongInjected = 'true';
-  
-  console.log(`[PingPong] Injected pixel ${trackingId} for recipients: "${uniqueRecipients || '(none)'}"`);
 
   // 6. Asynchronously register email metadata to the backend via background script
   try {
