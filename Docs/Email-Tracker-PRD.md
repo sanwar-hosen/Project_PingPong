@@ -115,70 +115,88 @@ This structure means: **total open count** = count of `OpenEvent` rows per `emai
 
 ## 4. Scope of Work — Phased Plan
 
-### **Phase 0: Environment & Project Setup**
-- Initialize monorepo with two top-level folders: `/extension` and `/server`.
-- Set up Railway project: one Node.js service + one Postgres plugin.
-- Set up Prisma, connect to Railway Postgres, run initial migration for `Email` and `OpenEvent` tables.
-- Set up `.env` handling for `DATABASE_URL` and any config values (base pixel URL, dashboard token).
-- Confirm Railway deployment pipeline works end-to-end with a trivial "Hello World" Express route before building real features.
+### **Phase 0: Environment & Project Setup** *(local only)*
+- [x] Initialize monorepo with two top-level folders: `/extension` and `/server`.
+- [x] Set up Prisma schema with `Email` and `OpenEvent` models (`schema.prisma` complete).
+- [x] Set up `.env` handling for `DATABASE_URL`, `BASE_URL`, and `DASHBOARD_SECRET` (`.env.example` complete).
+- [x] `docker-compose.yml` present for local Postgres instance.
+- [x] `railway.json` deployment config scaffolded (used in Phase 6).
+- [x] Run initial Prisma migration against local Postgres (`prisma migrate dev`).
+- [x] Confirm local server starts and `GET /health` returns `{ status: 'ok' }`.
 
-**Deliverable:** Empty but deployed Express app on Railway, connected to a working Postgres database, with Prisma migrations applied.
+> **Strategy:** All development (Phases 0–5) is done locally against the Docker Compose Postgres. Railway deployment is deferred to **Phase 6** after the full system is verified locally.
+
+**Deliverable:** Local Express app running on `http://localhost:3000`, connected to local Postgres via Docker Compose, with Prisma migrations applied and health check passing.
 
 ---
 
 ### **Phase 1: Backend — Pixel Tracking Endpoint**
-- Build `GET /pixel/:trackingId.gif` route:
-  - Look up or auto-create the `Email` row for `trackingId` if it doesn't exist (handles the case where the extension didn't pre-register the email).
-  - Insert a new `OpenEvent` row: capture IP (from request headers, accounting for proxy headers like `x-forwarded-for` since Railway sits behind a proxy), User-Agent, and timestamp.
-  - Perform a lightweight free IP-to-location lookup (e.g. using a free-tier geolocation API or a local IP-range dataset) to populate `approxLocation`. This must fail gracefully (log the open even if location lookup fails).
-  - Respond with a real 1x1 transparent GIF binary, correct `Content-Type: image/gif`, and cache-busting headers (`Cache-Control: no-store`) so repeated opens aren't silently deduplicated by client-side caching.
-- Build `POST /api/emails` route (optional, used by the extension to pre-register subject/recipient metadata at send time, so the dashboard has richer info than just tracking ID).
+- [ ] Build `GET /pixel/:trackingId.gif` route:
+  - [ ] Look up or auto-create the `Email` row for `trackingId` if it doesn't exist (handles the case where the extension didn't pre-register the email).
+  - [ ] Insert a new `OpenEvent` row: capture IP (from request headers, accounting for proxy headers like `x-forwarded-for` since Railway sits behind a proxy), User-Agent, and timestamp.
+  - [ ] Perform a lightweight free IP-to-location lookup (e.g. using a free-tier geolocation API or a local IP-range dataset) to populate `approxLocation`. This must fail gracefully (log the open even if location lookup fails).
+  - [ ] Respond with a real 1x1 transparent GIF binary, correct `Content-Type: image/gif`, and cache-busting headers (`Cache-Control: no-store`) so repeated opens aren't silently deduplicated by client-side caching.
+- [ ] Build `POST /api/emails` route (optional, used by the extension to pre-register subject/recipient metadata at send time, so the dashboard has richer info than just tracking ID).
 
 **Deliverable:** A working pixel endpoint, testable by manually visiting the URL in a browser and confirming a new `OpenEvent` row appears in the database each time.
 
 ---
 
 ### **Phase 2: Chrome Extension — Pixel Injection**
-- Manifest V3 extension targeting `mail.google.com`.
-- Content script that:
-  - Detects the Gmail "Send" button click event on the compose window (Gmail's DOM structure will need selector targeting — this is the trickiest part and may need adjustment if Gmail changes its markup).
-  - Generates a UUID client-side for the tracking ID.
-  - Injects a hidden `<img src="https://[your-railway-url]/pixel/[uuid].gif" width="1" height="1" style="display:none">` tag at the end of the email body before the send action completes.
-  - Optionally calls `POST /api/emails` first to register subject line and recipient(s) captured from the compose window fields, associating them with the same UUID.
-- Extension popup (minimal): shows connection status to the backend, and a link/button to open the dashboard directly.
+- [ ] Manifest V3 extension targeting `mail.google.com`.
+- [ ] Content script that:
+  - [ ] Detects the Gmail "Send" button click event on the compose window (Gmail's DOM structure will need selector targeting — this is the trickiest part and may need adjustment if Gmail changes its markup).
+  - [ ] Generates a UUID client-side for the tracking ID.
+  - [ ] Injects a hidden `<img src="http://localhost:3000/pixel/[uuid].gif" width="1" height="1" style="display:none">` tag at the end of the email body before the send action completes. *(URL is swapped to the Railway domain in Phase 6 before go-live.)*
+  - [ ] Optionally calls `POST /api/emails` first to register subject line and recipient(s) captured from the compose window fields, associating them with the same UUID.
+- [ ] Extension popup (minimal): shows connection status to the backend, and a link/button to open the dashboard directly.
 
 **Deliverable:** Installable unpacked Chrome extension that successfully injects a working pixel into real sent Gmail emails, confirmed by opening the sent email from a second account/device and seeing a new `OpenEvent` logged.
 
 ---
 
 ### **Phase 3: Dashboard — List View**
-- Route: `GET /dashboard` (protected by a simple secret token in the URL query string or a cookie set once manually — see Section 6.3; no full login system).
-- Query all `Email` rows, left-joined with a count of related `OpenEvent` rows, sorted by `sentAt` descending.
-- Render as an EJS template: simple table — Subject, Recipient, Sent At, Open Count, "View Details" link.
-- Basic empty-state handling (no emails tracked yet) and basic styling (doesn't need to be fancy, just clean and readable).
+- [ ] Route: `GET /dashboard` (protected by a simple secret token in the URL query string or a cookie set once manually — see Section 6.3; no full login system).
+- [ ] Query all `Email` rows, left-joined with a count of related `OpenEvent` rows, sorted by `sentAt` descending.
+- [ ] Render as an EJS template: simple table — Subject, Recipient, Sent At, Open Count, "View Details" link.
+- [ ] Basic empty-state handling (no emails tracked yet) and basic styling (doesn't need to be fancy, just clean and readable).
 
 **Deliverable:** Working list page showing real tracked emails and their open counts, pulling live from Postgres.
 
 ---
 
 ### **Phase 4: Dashboard — Detail View**
-- Route: `GET /dashboard/email/:id`.
-- Query the specific `Email` row plus all its `OpenEvent` rows, sorted by `openedAt` ascending (or descending — chronological order, oldest or newest first, either is fine, oldest-first probably more intuitive for "read history").
-- Render as an EJS template: header showing subject/recipient/sent time, followed by a table/list of every open event — timestamp, approx location, device/client (parsed roughly from User-Agent, e.g. "iPhone – Mail App" or "Windows – Chrome").
-- Include a simple "open count over time" mini visual if feasible (a basic sparkline or just a simple ordered list is enough for v1 — doesn't need to be a full chart library integration).
+- [ ] Route: `GET /dashboard/email/:id`.
+- [ ] Query the specific `Email` row plus all its `OpenEvent` rows, sorted by `openedAt` ascending (or descending — chronological order, oldest or newest first, either is fine, oldest-first probably more intuitive for "read history").
+- [ ] Render as an EJS template: header showing subject/recipient/sent time, followed by a table/list of every open event — timestamp, approx location, device/client (parsed roughly from User-Agent, e.g. "iPhone – Mail App" or "Windows – Chrome").
+- [ ] Include a simple "open count over time" mini visual if feasible (a basic sparkline or just a simple ordered list is enough for v1 — doesn't need to be a full chart library integration).
 
 **Deliverable:** Working detail page for any tracked email showing its complete open history.
 
 ---
 
-### **Phase 5: Polish, Edge Cases & Hardening**
-- Handle Gmail's "Undo Send" delay window (avoid double-injecting pixels or racing with Gmail's own send-cancel logic).
-- Handle image-proxy behavior from major email providers (Gmail itself proxies images through Google's own servers when the *recipient* is also on Gmail — meaning `approxLocation`/IP will reflect Google's proxy, not the recipient's real location; this is a known, unavoidable limitation of pixel tracking for Gmail-to-Gmail emails, and should be noted in the dashboard UI as a caveat rather than presented as precise data).
-- Deduplicate rapid repeated opens if needed (e.g. some clients "prefetch" images multiple times in quick succession — consider a short debounce window, e.g. ignore opens from the same IP within 2 seconds of a previous logged open, to avoid inflated counts from technical artifacts rather than genuine re-opens).
-- Basic error logging (e.g. simple console/log file, no need for a full observability stack at this scale).
-- README with setup/deployment instructions for future reference.
+### **Phase 5: Polish, Edge Cases & Hardening** *(local)*
+- [ ] Handle Gmail's "Undo Send" delay window (avoid double-injecting pixels or racing with Gmail's own send-cancel logic).
+- [ ] Handle image-proxy behavior from major email providers (Gmail itself proxies images through Google's own servers when the *recipient* is also on Gmail — meaning `approxLocation`/IP will reflect Google's proxy, not the recipient's real location; this is a known, unavoidable limitation of pixel tracking for Gmail-to-Gmail emails, and should be noted in the dashboard UI as a caveat rather than presented as precise data).
+- [ ] Deduplicate rapid repeated opens if needed (e.g. some clients "prefetch" images multiple times in quick succession — consider a short debounce window, e.g. ignore opens from the same IP within 2 seconds of a previous logged open, to avoid inflated counts from technical artifacts rather than genuine re-opens).
+- [ ] Basic error logging (e.g. simple console/log file, no need for a full observability stack at this scale).
+- [ ] Full local end-to-end test: send a real Gmail from the extension pointing at `localhost:3000`, confirm open events log correctly, confirm dashboard displays them.
 
-**Deliverable:** A stable, deployed, real-world-usable system with known limitations clearly documented.
+**Deliverable:** Fully working system verified locally. Ready to deploy.
+
+---
+
+### **Phase 6: Railway Deployment & Go-Live**
+- [ ] Create Railway project: one Node.js service + one Postgres plugin.
+- [ ] Push code to GitHub and connect the repo to Railway for auto-deploy.
+- [ ] Set Railway environment variables: `DATABASE_URL` (auto-linked by Railway), `DASHBOARD_SECRET`, `BASE_URL` (set to the live Railway domain), `NODE_ENV=production`.
+- [ ] Run Prisma migration against Railway Postgres: `railway run npx prisma migrate deploy`.
+- [ ] Generate Railway domain and confirm `GET /health` returns `{ status: 'ok' }` on the live URL.
+- [ ] Update the pixel base URL constant in `content-script.js` from `localhost:3000` to the live Railway domain.
+- [ ] Reload the unpacked Chrome extension and send a real test email to confirm end-to-end tracking works on the live deployment.
+- [ ] Write README with local dev setup + Railway deployment instructions.
+
+**Deliverable:** A stable, live, publicly-reachable deployment on Railway with all known limitations clearly documented.
 
 ---
 
