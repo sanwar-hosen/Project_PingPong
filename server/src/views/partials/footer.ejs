@@ -1,5 +1,34 @@
   <footer class="site-footer">
     <p>PingPong — self-hosted email open tracker</p>
   </footer>
+  <script>
+    // ── Theme Toggle ──────────────────────────────────────────────────────
+    (function() {
+      var toggle = document.getElementById('theme-toggle');
+      var icon = toggle.querySelector('.theme-toggle-icon');
+      var label = toggle.querySelector('.theme-toggle-label');
+
+      function applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('pingpong-theme', theme);
+        if (theme === 'light') {
+          icon.textContent = '☀️';
+          label.textContent = 'Light';
+        } else {
+          icon.textContent = '🌙';
+          label.textContent = 'Dark';
+        }
+      }
+
+      // Set initial button state to match current theme
+      var current = document.documentElement.getAttribute('data-theme') || 'dark';
+      applyTheme(current);
+
+      toggle.addEventListener('click', function() {
+        var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+      });
+    })();
+  </script>
 </body>
 </html>

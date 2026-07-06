@@ -1,12 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="PingPong — Self-hosted Gmail email open tracker dashboard" />
+  <meta name="robots" content="noindex, nofollow" />
   <title><%= title %> | PingPong</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <script>
+    // Apply saved theme immediately to avoid flash of wrong theme
+    (function() {
+      var saved = localStorage.getItem('pingpong-theme');
+      if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+  </script>
 </head>
 <body>
   <header class="site-header">
-    <a href="/dashboard" class="brand">🏓 PingPong</a>
+    <a href="/dashboard?key=<%= typeof dashboardKey !== 'undefined' ? dashboardKey : '' %>" class="brand">🏓 PingPong</a>
+    <span class="header-tagline">Email Open Tracker</span>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle dark/light mode">
+      <span class="theme-toggle-icon">🌙</span>
+      <span class="theme-toggle-label">Dark</span>
+    </button>
   </header>

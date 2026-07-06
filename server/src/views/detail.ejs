@@ -1,9 +1,149 @@
-<%- include('partials/header', { title: 'PingPong — Email Detail' }) %>
+<%- include('partials/header', { title: 'PingPong — ' + (email.subject || 'Email Detail') }) %>
 
 <main class="container">
-  <h1>Email Open History</h1>
-  <!-- Phase 4: email detail view goes here -->
-  <p class="placeholder-notice">Dashboard detail view — coming in Phase 4.</p>
+  <!-- ── Back Link ────────────────────────────────────────────────────── -->
+  <div class="page-header">
+    <a href="/dashboard?key=<%= dashboardKey %>" class="back-link" id="back-to-list">← Back to all emails</a>
+  </div>
+
+  <!-- ── Email Info Card ──────────────────────────────────────────────── -->
+  <section class="detail-hero" id="email-info-card">
+    <div class="detail-hero-left">
+      <h1 class="detail-subject" id="detail-subject">
+        <%= email.subject || '(No subject)' %>
+      </h1>
+      <div class="detail-meta">
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">To</span>
+          <span class="detail-meta-value" id="detail-recipient"><%= email.recipient || '(Unknown)' %></span>
+        </div>
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">Sent</span>
+          <span class="detail-meta-value" id="detail-sent-at">
+            <%= new Date(email.sentAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) %>
+            at
+            <%= new Date(email.sentAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) %>
+          </span>
+        </div>
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">Tracking ID</span>
+          <span class="detail-meta-value detail-tracking-id" id="detail-tracking-id"><%= email.id %></span>
+        </div>
+      </div>
+    </div>
+    <div class="detail-hero-right">
+      <div class="detail-open-count-display" id="detail-open-count">
+        <span class="detail-open-number"><%= opens.length %></span>
+        <span class="detail-open-label"><%= opens.length === 1 ? 'Open' : 'Opens' %></span>
+      </div>
+    </div>
+  </section>
+
+  <% if (opens.length === 0) { %>
+    <!-- ── No Opens Yet ─────────────────────────────────────────────── -->
+    <section class="detail-empty" id="detail-empty-state">
+      <div class="detail-empty-icon">👀</div>
+      <h2>No opens recorded yet</h2>
+      <p>When the recipient opens this email and loads images, open events will appear here with timestamp, location, and device info.</p>
+      <div class="detail-caveat">
+        <strong>Note:</strong> Some email clients block remote images by default, which prevents open tracking until the recipient clicks "Show images."
+      </div>
+    </section>
+  <% } else { %>
+
+    <!-- ── Opens Over Time (Mini Bar Chart) ──────────────────────────── -->
+    <% if (timelineData.length > 0) { %>
+      <section class="detail-section" id="opens-timeline-section">
+        <h2 class="detail-section-title">📊 Opens Over Time</h2>
+        <div class="timeline-chart" id="opens-timeline-chart">
+          <div class="timeline-bars">
+            <% timelineData.forEach(function(day) { %>
+              <div class="timeline-bar-group">
+                <div class="timeline-bar-value"><%= day.count %></div>
+                <div class="timeline-bar" style="height: <%= maxDayCount > 0 ? Math.max((day.count / maxDayCount) * 100, 8) : 8 %>%;" title="<%= day.date %>: <%= day.count %> open<%= day.count !== 1 ? 's' : '' %>"></div>
+                <div class="timeline-bar-label">
+                  <%= new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %>
+                </div>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+      </section>
+    <% } %>
+
+    <!-- ── Open Events Table ────────────────────────────────────────── -->
+    <section class="detail-section" id="open-events-section">
+      <h2 class="detail-section-title">📋 Open Event History</h2>
+      <p class="detail-section-subtitle">
+        Every time the tracking pixel was loaded, sorted oldest to newest.
+      </p>
+
+      <div class="table-wrapper">
+        <table class="email-table detail-table" id="open-events-table">
+          <thead>
+            <tr>
+              <th class="text-center">#</th>
+              <th>Opened At</th>
+              <th>Location</th>
+              <th>Device / Client</th>
+              <th class="col-ip">IP Address</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% opens.forEach(function(open) { %>
+              <tr class="open-event-row" id="open-event-<%= open.id %>">
+                <td class="text-center">
+                  <span class="open-number-badge"><%= open.openNumber %></span>
+                </td>
+                <td class="cell-opened-at">
+                  <span class="opened-date" title="<%= new Date(open.openedAt).toISOString() %>">
+                    <%= new Date(open.openedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) %>
+                  </span>
+                  <span class="opened-time">
+                    <%= new Date(open.openedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) %>
+                  </span>
+                </td>
+                <td class="cell-location">
+                  <% if (open.approxLocation) { %>
+                    <span class="location-text" title="<%= open.approxLocation %>">
+                      📍 <%= open.approxLocation %>
+                    </span>
+                  <% } else { %>
+                    <span class="location-unknown">Unknown</span>
+                  <% } %>
+                </td>
+                <td class="cell-device">
+                  <span class="device-label" title="<%= open.userAgent %>">
+                    <% if (open.parsedUA.device === 'iPhone' || open.parsedUA.device === 'iPad') { %>📱
+                    <% } else if (open.parsedUA.device === 'Android') { %>📱
+                    <% } else if (open.parsedUA.device === 'macOS') { %>💻
+                    <% } else if (open.parsedUA.device === 'Windows') { %>🖥️
+                    <% } else if (open.parsedUA.device === 'Linux') { %>🐧
+                    <% } else { %>🌐
+                    <% } %>
+                    <%= open.parsedUA.label %>
+                  </span>
+                </td>
+                <td class="cell-ip col-ip">
+                  <code class="ip-address"><%= open.ipAddress %></code>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Caveats Notice ───────────────────────────────────────────── -->
+    <section class="detail-caveats" id="detail-caveats">
+      <h3>⚠️ Known Tracking Limitations</h3>
+      <ul>
+        <li><strong>Gmail-to-Gmail:</strong> Opens may show Google's proxy server location (e.g. Mountain View, CA) instead of the recipient's real location.</li>
+        <li><strong>Image blocking:</strong> Some email clients block remote images by default — the email may have been read without triggering a tracked "open."</li>
+        <li><strong>Apple Mail Privacy Protection:</strong> MPP pre-fetches images for all emails, which can produce false-positive opens for Apple Mail users.</li>
+      </ul>
+    </section>
+  <% } %>
 </main>
 
 <%- include('partials/footer') %>

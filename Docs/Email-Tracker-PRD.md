@@ -131,56 +131,56 @@ This structure means: **total open count** = count of `OpenEvent` rows per `emai
 ---
 
 ### **Phase 1: Backend — Pixel Tracking Endpoint**
-- [ ] Build `GET /pixel/:trackingId.gif` route:
-  - [ ] Look up or auto-create the `Email` row for `trackingId` if it doesn't exist (handles the case where the extension didn't pre-register the email).
-  - [ ] Insert a new `OpenEvent` row: capture IP (from request headers, accounting for proxy headers like `x-forwarded-for` since Railway sits behind a proxy), User-Agent, and timestamp.
-  - [ ] Perform a lightweight free IP-to-location lookup (e.g. using a free-tier geolocation API or a local IP-range dataset) to populate `approxLocation`. This must fail gracefully (log the open even if location lookup fails).
-  - [ ] Respond with a real 1x1 transparent GIF binary, correct `Content-Type: image/gif`, and cache-busting headers (`Cache-Control: no-store`) so repeated opens aren't silently deduplicated by client-side caching.
-- [ ] Build `POST /api/emails` route (optional, used by the extension to pre-register subject/recipient metadata at send time, so the dashboard has richer info than just tracking ID).
+- [x] Build `GET /pixel/:trackingId.gif` route:
+  - [x] Look up or auto-create the `Email` row for `trackingId` if it doesn't exist (handles the case where the extension didn't pre-register the email).
+  - [x] Insert a new `OpenEvent` row: capture IP (from request headers, accounting for proxy headers like `x-forwarded-for` since Railway sits behind a proxy), User-Agent, and timestamp.
+  - [x] Perform a lightweight free IP-to-location lookup (e.g. using a free-tier geolocation API or a local IP-range dataset) to populate `approxLocation`. This must fail gracefully (log the open even if location lookup fails).
+  - [x] Respond with a real 1x1 transparent GIF binary, correct `Content-Type: image/gif`, and cache-busting headers (`Cache-Control: no-store`) so repeated opens aren't silently deduplicated by client-side caching.
+- [x] Build `POST /api/emails` route (optional, used by the extension to pre-register subject/recipient metadata at send time, so the dashboard has richer info than just tracking ID).
 
 **Deliverable:** A working pixel endpoint, testable by manually visiting the URL in a browser and confirming a new `OpenEvent` row appears in the database each time.
 
 ---
 
 ### **Phase 2: Chrome Extension — Pixel Injection**
-- [ ] Manifest V3 extension targeting `mail.google.com`.
-- [ ] Content script that:
-  - [ ] Detects the Gmail "Send" button click event on the compose window (Gmail's DOM structure will need selector targeting — this is the trickiest part and may need adjustment if Gmail changes its markup).
-  - [ ] Generates a UUID client-side for the tracking ID.
-  - [ ] Injects a hidden `<img src="http://localhost:3000/pixel/[uuid].gif" width="1" height="1" style="display:none">` tag at the end of the email body before the send action completes. *(URL is swapped to the Railway domain in Phase 6 before go-live.)*
-  - [ ] Optionally calls `POST /api/emails` first to register subject line and recipient(s) captured from the compose window fields, associating them with the same UUID.
-- [ ] Extension popup (minimal): shows connection status to the backend, and a link/button to open the dashboard directly.
+- [x] Manifest V3 extension targeting `mail.google.com`.
+- [x] Content script that:
+  - [x] Detects the Gmail "Send" button click event on the compose window (Gmail's DOM structure will need selector targeting — this is the trickiest part and may need adjustment if Gmail changes its markup).
+  - [x] Generates a UUID client-side for the tracking ID.
+  - [x] Injects a hidden `<img src="http://localhost:3000/pixel/[uuid].gif" width="1" height="1" style="display:none">` tag at the end of the email body before the send action completes. *(URL is swapped to the Railway domain in Phase 6 before go-live.)*
+  - [x] Optionally calls `POST /api/emails` first to register subject line and recipient(s) captured from the compose window fields, associating them with the same UUID.
+- [x] Extension popup (minimal): shows connection status to the backend, and a link/button to open the dashboard directly.
 
 **Deliverable:** Installable unpacked Chrome extension that successfully injects a working pixel into real sent Gmail emails, confirmed by opening the sent email from a second account/device and seeing a new `OpenEvent` logged.
 
 ---
 
 ### **Phase 3: Dashboard — List View**
-- [ ] Route: `GET /dashboard` (protected by a simple secret token in the URL query string or a cookie set once manually — see Section 6.3; no full login system).
-- [ ] Query all `Email` rows, left-joined with a count of related `OpenEvent` rows, sorted by `sentAt` descending.
-- [ ] Render as an EJS template: simple table — Subject, Recipient, Sent At, Open Count, "View Details" link.
-- [ ] Basic empty-state handling (no emails tracked yet) and basic styling (doesn't need to be fancy, just clean and readable).
+- [x] Route: `GET /dashboard` (protected by a simple secret token in the URL query string or a cookie set once manually — see Section 6.3; no full login system).
+- [x] Query all `Email` rows, left-joined with a count of related `OpenEvent` rows, sorted by `sentAt` descending.
+- [x] Render as an EJS template: simple table — Subject, Recipient, Sent At, Open Count, "View Details" link.
+- [x] Basic empty-state handling (no emails tracked yet) and basic styling (doesn't need to be fancy, just clean and readable).
 
 **Deliverable:** Working list page showing real tracked emails and their open counts, pulling live from Postgres.
 
 ---
 
 ### **Phase 4: Dashboard — Detail View**
-- [ ] Route: `GET /dashboard/email/:id`.
-- [ ] Query the specific `Email` row plus all its `OpenEvent` rows, sorted by `openedAt` ascending (or descending — chronological order, oldest or newest first, either is fine, oldest-first probably more intuitive for "read history").
-- [ ] Render as an EJS template: header showing subject/recipient/sent time, followed by a table/list of every open event — timestamp, approx location, device/client (parsed roughly from User-Agent, e.g. "iPhone – Mail App" or "Windows – Chrome").
-- [ ] Include a simple "open count over time" mini visual if feasible (a basic sparkline or just a simple ordered list is enough for v1 — doesn't need to be a full chart library integration).
+- [x] Route: `GET /dashboard/email/:id`.
+- [x] Query the specific `Email` row plus all its `OpenEvent` rows, sorted by `openedAt` ascending (or descending — chronological order, oldest or newest first, either is fine, oldest-first probably more intuitive for "read history").
+- [x] Render as an EJS template: header showing subject/recipient/sent time, followed by a table/list of every open event — timestamp, approx location, device/client (parsed roughly from User-Agent, e.g. "iPhone – Mail App" or "Windows – Chrome").
+- [x] Include a simple "open count over time" mini visual if feasible (a basic sparkline or just a simple ordered list is enough for v1 — doesn't need to be a full chart library integration).
 
 **Deliverable:** Working detail page for any tracked email showing its complete open history.
 
 ---
 
 ### **Phase 5: Polish, Edge Cases & Hardening** *(local)*
-- [ ] Handle Gmail's "Undo Send" delay window (avoid double-injecting pixels or racing with Gmail's own send-cancel logic).
-- [ ] Handle image-proxy behavior from major email providers (Gmail itself proxies images through Google's own servers when the *recipient* is also on Gmail — meaning `approxLocation`/IP will reflect Google's proxy, not the recipient's real location; this is a known, unavoidable limitation of pixel tracking for Gmail-to-Gmail emails, and should be noted in the dashboard UI as a caveat rather than presented as precise data).
-- [ ] Deduplicate rapid repeated opens if needed (e.g. some clients "prefetch" images multiple times in quick succession — consider a short debounce window, e.g. ignore opens from the same IP within 2 seconds of a previous logged open, to avoid inflated counts from technical artifacts rather than genuine re-opens).
-- [ ] Basic error logging (e.g. simple console/log file, no need for a full observability stack at this scale).
-- [ ] Full local end-to-end test: send a real Gmail from the extension pointing at `localhost:3000`, confirm open events log correctly, confirm dashboard displays them.
+- [x] Handle Gmail's "Undo Send" delay window (avoid double-injecting pixels or racing with Gmail's own send-cancel logic).
+- [x] Handle image-proxy behavior from major email providers (Gmail itself proxies images through Google's own servers when the *recipient* is also on Gmail — meaning `approxLocation`/IP will reflect Google's proxy, not the recipient's real location; this is a known, unavoidable limitation of pixel tracking for Gmail-to-Gmail emails, and should be noted in the dashboard UI as a caveat rather than presented as precise data).
+- [x] Deduplicate rapid repeated opens if needed (e.g. some clients "prefetch" images multiple times in quick succession — consider a short debounce window, e.g. ignore opens from the same IP within 2 seconds of a previous logged open, to avoid inflated counts from technical artifacts rather than genuine re-opens).
+- [x] Basic error logging (e.g. simple console/log file, no need for a full observability stack at this scale).
+- [x] Full local end-to-end test: send a real Gmail from the extension pointing at `localhost:3000`, confirm open events log correctly, confirm dashboard displays them.
 
 **Deliverable:** Fully working system verified locally. Ready to deploy.
 

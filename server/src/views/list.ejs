@@ -1,9 +1,113 @@
 <%- include('partials/header', { title: 'PingPong — Tracked Emails' }) %>
 
 <main class="container">
-  <h1>Tracked Emails</h1>
-  <!-- Phase 3: email list table goes here -->
-  <p class="placeholder-notice">Dashboard list view — coming in Phase 3.</p>
+  <div class="page-header">
+    <h1>📬 Tracked Emails</h1>
+    <p class="subtitle">All outgoing tracked emails and their open counts</p>
+  </div>
+
+  <% if (!emails || emails.length === 0) { %>
+    <!-- ── Empty State ──────────────────────────────────────────────────── -->
+    <div class="empty-state">
+      <div class="empty-state-icon">📭</div>
+      <h2>No tracked emails yet</h2>
+      <p>
+        Once you send an email with the PingPong Chrome extension installed,
+        it will appear here with live open tracking.
+      </p>
+      <div class="empty-state-steps">
+        <div class="step">
+          <span class="step-number">1</span>
+          <span>Install the PingPong extension</span>
+        </div>
+        <div class="step">
+          <span class="step-number">2</span>
+          <span>Compose &amp; send an email in Gmail</span>
+        </div>
+        <div class="step">
+          <span class="step-number">3</span>
+          <span>Come back here to see opens</span>
+        </div>
+      </div>
+    </div>
+  <% } else { %>
+    <!-- ── Stats Bar ────────────────────────────────────────────────────── -->
+    <div class="stats-bar">
+      <div class="stat-card">
+        <span class="stat-value"><%= emails.length %></span>
+        <span class="stat-label">Total Emails</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value"><%= emails.reduce((sum, e) => sum + e._count.opens, 0) %></span>
+        <span class="stat-label">Total Opens</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value"><%= emails.filter(e => e._count.opens > 0).length %></span>
+        <span class="stat-label">Emails Opened</span>
+      </div>
+    </div>
+
+    <!-- ── Email Table ──────────────────────────────────────────────────── -->
+    <div class="table-wrapper">
+      <table class="email-table" id="email-list-table">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Recipient</th>
+            <th>Sent</th>
+            <th class="text-center">Opens</th>
+            <th>Last Opened</th>
+            <th class="text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% emails.forEach(function(email) { %>
+            <tr class="email-row" id="email-row-<%= email.id %>">
+              <td class="cell-subject">
+                <span class="subject-text"><%= email.subject || '(No subject)' %></span>
+              </td>
+              <td class="cell-recipient">
+                <span class="recipient-text"><%= email.recipient || '(Unknown)' %></span>
+              </td>
+              <td class="cell-sent">
+                <span class="sent-date" title="<%= new Date(email.sentAt).toISOString() %>">
+                  <%= new Date(email.sentAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %>
+                </span>
+                <span class="sent-time">
+                  <%= new Date(email.sentAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) %>
+                </span>
+              </td>
+              <td class="cell-opens text-center">
+                <% if (email._count.opens > 0) { %>
+                  <span class="badge badge-opened"><%= email._count.opens %></span>
+                <% } else { %>
+                  <span class="badge badge-unopened">0</span>
+                <% } %>
+              </td>
+              <td class="cell-last-opened">
+                <% if (email.opens && email.opens.length > 0) { %>
+                  <% var lastOpen = new Date(email.opens[0].openedAt); %>
+                  <span class="last-opened-date" title="<%= lastOpen.toISOString() %>">
+                    <%= lastOpen.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %>
+                  </span>
+                  <span class="last-opened-time">
+                    <%= lastOpen.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) %>
+                  </span>
+                <% } else { %>
+                  <span class="not-opened-yet">Not opened yet</span>
+                <% } %>
+              </td>
+              <td class="cell-action text-center">
+                <a href="/dashboard/email/<%= email.id %>?key=<%= dashboardKey %>" class="btn-details" id="details-btn-<%= email.id %>">
+                  View Details →
+                </a>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
 </main>
 
 <%- include('partials/footer') %>
