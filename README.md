@@ -57,167 +57,160 @@ cd Project_PingPong
 
 ## Step 2 — Deploy the server
 
-You have three hosting options. **Pick one.** All work identically once set up. The only difference is the URL format your app gets:
+You have four hosting options. **Pick one.** All work identically once set up. The only difference is the URL format your app gets:
 
-- **Option A — Railway:** `https://your-app.up.railway.app` *(may require credit card after trial)*
-- **Option B — Fly.io:** `https://your-app.fly.dev` *(requires credit card)*
-- **Option C — Koyeb + Neon:** `https://your-app.koyeb.app` ✅ **Recommended — no credit card on either service**
+- **Option A — Private VPS:** `https://your-custom-domain.com` *(Runs on your own Ubuntu server — no credit cards for third-party hosting, no cold starts)*
+- **Option B — Koyeb + Neon:** `https://your-app.koyeb.app` ✅ **Recommended — no credit card on either service**
+- **Option C — Railway:** `https://your-app.up.railway.app` *(may require credit card after trial)*
+- **Option D — Fly.io:** `https://your-app.fly.dev` *(requires credit card)*
 
 ---
 
-### Option A — Railway (easiest, no CLI required)
+### Option A — Private VPS (e.g. DigitalOcean, Hetzner, AWS, Linode)
 
-**Step 2A.1 — Create a Railway account**
-1. Go to [railway.app](https://railway.app) and click **Sign Up**
-2. Log in with GitHub (fastest option — Railway will ask permission to access your repos)
-3. Verify your email if prompted
+If you own or rent a private VPS (Virtual Private Server), you can host PingPong there. This avoids cold starts and relies entirely on your own infrastructure. This guide assumes your VPS runs **Ubuntu 20.04 or newer** (the most common OS for VPS hosting) and that you have a domain name pointing to your VPS IP address.
 
-**Step 2A.2 — Push your code to GitHub**
+#### Step 2A.1 — Prepare your Database
+You can host PostgreSQL locally on your VPS, but for the simplest setup, we recommend using a free **Neon** PostgreSQL database:
+1. Go to [neon.tech](https://neon.tech) → **Sign Up** (GitHub login works)
+2. Click **New Project** → give it a name (e.g. `pingpong`) → click **Create Project**
+3. Neon creates a database and shows you a connection string. It looks like:
+   ```
+   postgresql://user:password@ep-something-abc123.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+4. **Copy this entire connection string** — you'll need it in Step 2A.5. Keep the tab open.
 
-If your code isn't on GitHub yet:
-1. Go to [github.com/new](https://github.com/new) and create a new **empty** repository (name it anything, e.g. `pingpong`)
-2. Make it **Private** (your tracking data is private — keep the code private too)
-3. Open a terminal in the `Project_PingPong` folder and run:
+> Neon's free tier gives you 0.5 GB storage and 190 compute hours/month. At your volume that's more than enough — forever.
 
+#### Step 2A.2 — Connect to your VPS
+Open a terminal on your computer and connect to your VPS using SSH (replace `root` and `your_vps_ip` with your actual VPS username and IP):
 ```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/pingpong.git
-git branch -M main
-git push -u origin main
+ssh root@your_vps_ip
 ```
 
-**Step 2A.3 — Create the Railway project**
-1. In Railway: **New Project → Deploy from GitHub repo**
-2. Select your `pingpong` repository
-3. Railway detects it's Node.js automatically — the `server/railway.json` file handles all build and start configuration. **No manual setup needed.**
+#### Step 2A.3 — Install Node.js, Git, and PM2
+Run these commands on your VPS terminal to install the necessary software.
+```bash
+# Update the VPS packages
+sudo apt update && sudo apt upgrade -y
 
-**Step 2A.4 — Add a database**
-1. Inside the same Railway project, click **+ New** → **Database** → **Add PostgreSQL**
-2. Railway automatically creates a `DATABASE_URL` variable and links it to your app. You'll see it appear in your service's **Variables** tab.
+# Install Git
+sudo apt install -y git
 
-**Step 2A.5 — Set environment variables**
+# Install Node.js (Version 20)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
 
-In your Railway app service → **Variables** tab, add these three:
+# Install PM2 (Process Manager to run the app in the background permanently)
+sudo npm install -y pm2 -g
+```
 
-| Variable | Value |
-|---|---|
-| `DASHBOARD_SECRET` | Make up a long random password (40+ characters). Generate one at [randomkeygen.com](https://randomkeygen.com) — use the "CodeIgniter Encryption Keys" section. **Write this down — you'll need it to open your dashboard.** |
-| `NODE_ENV` | `production` |
-| `BASE_URL` | Leave blank for now — you'll fill this in after the next step |
+#### Step 2A.4 — Clone and Setup the Project
+1. Clone your repository onto the VPS:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/Project_PingPong.git
+   cd Project_PingPong/server
+   ```
+2. Install the project dependencies:
+   ```bash
+   npm install
+   ```
 
-**Step 2A.6 — Get your Railway URL**
-1. In your Railway app service → **Settings** → **Networking** → click **Generate Domain**
-2. You'll get a URL like `https://pingpong-production-abc123.up.railway.app`
-3. **Copy this URL**
-4. Now go back to the Variables tab and set `BASE_URL` to this URL
+#### Step 2A.5 — Configure Environment Variables
+1. Create a configuration file (called `.env`):
+   ```bash
+   nano .env
+   ```
+2. Paste the following settings. Make sure to customize the values:
+   ```env
+   # The Neon connection string you copied in Step 2A.1
+   DATABASE_URL="postgresql://user:password@ep-something.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
-**Step 2A.7 — Verify the server is live**
+   # A long, random password (40+ characters) to protect your dashboard
+   DASHBOARD_SECRET="your-long-random-secret-here"
 
-Visit `https://YOUR-RAILWAY-URL/health` in your browser. You should see:
+   # The domain name pointing to your VPS (e.g., https://pingpong.yourdomain.com)
+   BASE_URL="https://your-custom-domain.com"
+
+   # The port the app runs on locally (keep it as 3000)
+   PORT=3000
+
+   # Set environment to production
+   NODE_ENV="production"
+   ```
+3. Save and close the editor: Press `Ctrl + O`, then `Enter`, then `Ctrl + X`.
+
+#### Step 2A.6 — Deploy Database Tables
+Generate the database client and push the tables to Neon:
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+#### Step 2A.7 — Start the Server
+Start the application using PM2 so it stays online 24/7:
+```bash
+pm2 start src/index.js --name pingpong
+
+# Configure PM2 to start automatically if your VPS restarts
+pm2 startup
+pm2 save
+```
+> **Note:** PM2 startup will display a command to run (starting with `sudo env PATH=...`). Copy and run that exact command to complete the startup configuration.
+
+#### Step 2A.8 — Configure HTTPS & Nginx (Crucial)
+Chrome extensions require a secure HTTPS connection. We will set up **Nginx** as a reverse proxy and use **Certbot** (Let's Encrypt) to get a free SSL certificate.
+
+1. Install Nginx and Certbot:
+   ```bash
+   sudo apt install -y nginx certbot python3-certbot-nginx
+   ```
+2. Open Nginx configuration to direct domain traffic to our app:
+   ```bash
+   sudo nano /etc/nginx/sites-available/pingpong
+   ```
+3. Paste the following configuration (replace `your-custom-domain.com` with your actual domain):
+   ```nginx
+   server {
+       listen 80;
+       server_name your-custom-domain.com;
+
+       location / {
+           proxy_pass http://localhost:3000;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection 'upgrade';
+           proxy_set_header Host $host;
+           proxy_cache_bypass $http_upgrade;
+       }
+   }
+   ```
+4. Enable the configuration and restart Nginx:
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/pingpong /etc/nginx/sites-enabled/
+   sudo rm -f /etc/nginx/sites-enabled/default
+   sudo nginx -t
+   sudo systemctl restart nginx
+   ```
+5. Obtain the SSL Certificate (follow prompts to automatically configure HTTPS redirect):
+   ```bash
+   sudo certbot --nginx -d your-custom-domain.com
+   ```
+
+#### Step 2A.9 — Verify the server is live
+Visit `https://your-custom-domain.com/health` in your web browser. You should see:
 ```json
 {"status":"ok","timestamp":"..."}
 ```
-
-If you see that — ✅ your server is running. Skip to **Step 3**.
-
----
-
-### Option B — Fly.io *(requires credit card — skip if you don't have one)*
-
-**Step 2B.1 — Create a Fly.io account**
-1. Go to [fly.io](https://fly.io) → **Get Started**
-2. Sign up with GitHub or email
-3. You may be asked for a credit card to verify your identity — Fly.io has a generous free tier and won't charge you at this volume
-
-**Step 2B.2 — Install the Fly.io CLI (`flyctl`)**
-
-Open a terminal and run:
-
-```bash
-# macOS / Linux
-curl -L https://fly.io/install.sh | sh
-
-# Windows (PowerShell)
-pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"
-```
-
-Then log in:
-```bash
-flyctl auth login
-```
-
-This opens a browser window — log in with your Fly.io account.
-
-**Step 2B.3 — Open the server folder**
-
-All Fly.io commands must be run from inside the `server/` folder:
-```bash
-cd server
-```
-
-**Step 2B.4 — Edit `fly.toml` with your app name**
-
-Open `server/fly.toml` in any text editor. Change the first line to a unique name (it becomes part of your URL):
-
-```toml
-app = "pingpong-yourname"    # must be globally unique on Fly.io
-```
-
-**Step 2B.5 — Create the app on Fly.io**
-
-```bash
-flyctl launch --no-deploy
-```
-
-When prompted:
-- **"Would you like to copy its configuration to the new app?"** → Yes
-- **"Would you like to set up a Postgresql database?"** → Yes → choose **Development** (free)
-- **"Would you like to set up an Upstash Redis database?"** → No
-
-This creates your app and a free Postgres database, and automatically links `DATABASE_URL`.
-
-**Step 2B.6 — Set environment variables (secrets)**
-
-```bash
-flyctl secrets set \
-  DASHBOARD_SECRET="your-long-random-secret-here" \
-  NODE_ENV="production" \
-  BASE_URL="https://pingpong-yourname.fly.dev"
-```
-
-> Replace `pingpong-yourname` with the actual app name you chose in Step 2B.4.
-> Replace `your-long-random-secret-here` with a random 40+ character string. Generate one at [randomkeygen.com](https://randomkeygen.com). **Write this down — you need it to open your dashboard.**
-
-**Step 2B.7 — Deploy**
-
-```bash
-flyctl deploy
-```
-
-This builds your server, runs the database migrations automatically, and starts the app. Watch the logs — when you see `✓ Machine ... is now up`, you're live.
-
-**Step 2B.8 — Verify the server is live**
-
-```bash
-flyctl open /health
-```
-
-Or visit `https://pingpong-yourname.fly.dev/health` in your browser. You should see:
-```json
-{"status":"ok","timestamp":"..."}
-```
-
-If you see that — ✅ your server is running.
+If you see that — ✅ your VPS server is running. Continue to **Step 3**.
 
 ---
 
-### Option C — Koyeb + Neon ✅ Recommended free option (no credit card on either)
+### Option B — Koyeb + Neon ✅ Recommended free option (no credit card on either)
 
 Koyeb hosts your Node.js app. Neon hosts your PostgreSQL database. They're separate services connected by a single connection string — this is a very common, reliable pattern.
 
-**Step 2C.1 — Create a Neon account and database**
+#### Step 2B.1 — Create a Neon account and database
 
 1. Go to [neon.tech](https://neon.tech) → **Sign Up** (GitHub login works)
 2. Click **New Project** → give it a name (e.g. `pingpong`) → click **Create Project**
@@ -225,16 +218,16 @@ Koyeb hosts your Node.js app. Neon hosts your PostgreSQL database. They're separ
    ```
    postgresql://user:password@ep-something-abc123.us-east-2.aws.neon.tech/neondb?sslmode=require
    ```
-4. **Copy this entire connection string** — you'll need it in Step 2C.4. Keep the tab open.
+4. **Copy this entire connection string** — you'll need it in Step 2B.4. Keep the tab open.
 
 > Neon's free tier gives you 0.5 GB storage and 190 compute hours/month. At your volume that's more than enough — forever.
 
-**Step 2C.2 — Create a Koyeb account**
+#### Step 2B.2 — Create a Koyeb account
 
 1. Go to [koyeb.com](https://koyeb.com) → **Get Started** → sign up (GitHub login works)
 2. No credit card required
 
-**Step 2C.3 — Push your code to GitHub** *(skip if already done)*
+#### Step 2B.3 — Push your code to GitHub *(skip if already done)*
 
 ```bash
 git init
@@ -245,7 +238,7 @@ git branch -M main
 git push -u origin main
 ```
 
-**Step 2C.4 — Create the Koyeb service**
+#### Step 2B.4 — Create the Koyeb service
 
 1. In Koyeb → **Create Service** → **GitHub**
 2. Select your repository
@@ -264,21 +257,21 @@ git push -u origin main
 
    | Variable | Value |
    |---|---|
-   | `DATABASE_URL` | The full Neon connection string you copied in Step 2C.1 |
+   | `DATABASE_URL` | The full Neon connection string you copied in Step 2B.1 |
    | `DASHBOARD_SECRET` | A long random password (40+ chars). Generate at [randomkeygen.com](https://randomkeygen.com). **Write this down.** |
    | `NODE_ENV` | `production` |
    | `BASE_URL` | Leave blank for now — fill in after deploy |
 
 5. Click **Deploy**
 
-**Step 2C.5 — Get your Koyeb URL**
+#### Step 2B.5 — Get your Koyeb URL
 
 1. After deploy completes, Koyeb shows you a URL in the format:
    `https://pingpong-yourname-abc123.koyeb.app`
 2. **Copy this URL**
 3. Go back to your Koyeb service → **Settings** → **Environment variables** → set `BASE_URL` to this URL → **Redeploy**
 
-**Step 2C.6 — Verify the server is live**
+#### Step 2B.6 — Verify the server is live
 
 Visit `https://YOUR-KOYEB-URL/health` in your browser. You should see:
 ```json
@@ -289,17 +282,165 @@ If you see that — ✅ your server is running. The database tables were created
 
 ---
 
+### Option C — Railway (easiest, no CLI required)
+
+#### Step 2C.1 — Create a Railway account
+1. Go to [railway.app](https://railway.app) and click **Sign Up**
+2. Log in with GitHub (fastest option — Railway will ask permission to access your repos)
+3. Verify your email if prompted
+
+#### Step 2C.2 — Push your code to GitHub
+
+If your code isn't on GitHub yet:
+1. Go to [github.com/new](https://github.com/new) and create a new **empty** repository (name it anything, e.g. `pingpong`)
+2. Make it **Private** (your tracking data is private — keep the code private too)
+3. Open a terminal in the `Project_PingPong` folder and run:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/YOUR_USERNAME/pingpong.git
+git branch -M main
+git push -u origin main
+```
+
+#### Step 2C.3 — Create the Railway project
+1. In Railway: **New Project → Deploy from GitHub repo**
+2. Select your `pingpong` repository
+3. Railway detects it's Node.js automatically — the `server/railway.json` file handles all build and start configuration. **No manual setup needed.**
+
+#### Step 2C.4 — Add a database
+1. Inside the same Railway project, click **+ New** → **Database** → **Add PostgreSQL**
+2. Railway automatically creates a `DATABASE_URL` variable and links it to your app. You'll see it appear in your service's **Variables** tab.
+
+#### Step 2C.5 — Set environment variables
+
+In your Railway app service → **Variables** tab, add these three:
+
+| Variable | Value |
+|---|---|
+| `DASHBOARD_SECRET` | Make up a long random password (40+ characters). Generate one at [randomkeygen.com](https://randomkeygen.com) — use the "CodeIgniter Encryption Keys" section. **Write this down — you'll need it to open your dashboard.** |
+| `NODE_ENV` | `production` |
+| `BASE_URL` | Leave blank for now — you'll fill this in after the next step |
+
+#### Step 2C.6 — Get your Railway URL
+1. In your Railway app service → **Settings** → **Networking** → click **Generate Domain**
+2. You'll get a URL like `https://pingpong-production-abc123.up.railway.app`
+3. **Copy this URL**
+4. Now go back to the Variables tab and set `BASE_URL` to this URL
+
+#### Step 2C.7 — Verify the server is live
+
+Visit `https://YOUR-RAILWAY-URL/health` in your browser. You should see:
+```json
+{"status":"ok","timestamp":"..."}
+```
+
+If you see that — ✅ your server is running. Skip to **Step 3**.
+
+---
+
+### Option D — Fly.io *(requires credit card — skip if you don't have one)*
+
+#### Step 2D.1 — Create a Fly.io account
+1. Go to [fly.io](https://fly.io) → **Get Started**
+2. Sign up with GitHub or email
+3. You may be asked for a credit card to verify your identity — Fly.io has a generous free tier and won't charge you at this volume
+
+#### Step 2D.2 — Install the Fly.io CLI (`flyctl`)
+
+Open a terminal and run:
+
+```bash
+# macOS / Linux
+curl -L https://fly.io/install.sh | sh
+
+# Windows (PowerShell)
+pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"
+```
+
+Then log in:
+```bash
+flyctl auth login
+```
+
+This opens a browser window — log in with your Fly.io account.
+
+#### Step 2D.3 — Open the server folder
+
+All Fly.io commands must be run from inside the `server/` folder:
+```bash
+cd server
+```
+
+#### Step 2D.4 — Edit `fly.toml` with your app name
+
+Open `server/fly.toml` in any text editor. Change the first line to a unique name (it becomes part of your URL):
+
+```toml
+app = "pingpong-yourname"    # must be globally unique on Fly.io
+```
+
+#### Step 2D.5 — Create the app on Fly.io
+
+```bash
+flyctl launch --no-deploy
+```
+
+When prompted:
+- **"Would you like to copy its configuration to the new app?"** → Yes
+- **"Would you like to set up a Postgresql database?"** → Yes → choose **Development** (free)
+- **"Would you like to set up an Upstash Redis database?"** → No
+
+This creates your app and a free Postgres database, and automatically links `DATABASE_URL`.
+
+#### Step 2D.6 — Set environment variables (secrets)
+
+```bash
+flyctl secrets set \
+  DASHBOARD_SECRET="your-long-random-secret-here" \
+  NODE_ENV="production" \
+  BASE_URL="https://pingpong-yourname.fly.dev"
+```
+
+> Replace `pingpong-yourname` with the actual app name you chose in Step 2D.4.
+> Replace `your-long-random-secret-here` with a random 40+ character string. Generate one at [randomkeygen.com](https://randomkeygen.com). **Write this down — you need it to open your dashboard.**
+
+#### Step 2D.7 — Deploy
+
+```bash
+flyctl deploy
+```
+
+This builds your server, runs the database migrations automatically, and starts the app. Watch the logs — when you see `✓ Machine ... is now up`, you're live.
+
+#### Step 2D.8 — Verify the server is live
+
+```bash
+flyctl open /health
+```
+
+Or visit `https://pingpong-yourname.fly.dev/health` in your browser. You should see:
+```json
+{"status":"ok","timestamp":"..."}
+```
+
+If you see that — ✅ your server is running.
+
+---
+
 ## Step 3 — Verify database tables
 
-> Migrations run automatically during every deploy for all three platforms. This step is just a sanity check.
+> Migrations run automatically during every deploy/setup for all platforms. This step is just a sanity check.
+
+**Private VPS / Koyeb + Neon:** In [neon.tech](https://neon.tech) → your project → **Tables** tab → you should see `emails` and `open_events`.
 
 **Railway:** In Railway → click your **PostgreSQL** service → **Data** tab → you should see `emails` and `open_events` tables.
 
 **Fly.io:** Run `flyctl postgres connect -a your-postgres-app-name` or check via the Fly.io dashboard.
 
-**Koyeb + Neon:** In [neon.tech](https://neon.tech) → your project → **Tables** tab → you should see `emails` and `open_events`.
-
-If the tables aren't there, trigger a redeploy on your platform — the migration runs again and creates them.
+If the tables aren't there, trigger a redeploy or manually run migrations (`npx prisma migrate deploy`) — the migration runs and creates them.
 
 ---
 
@@ -321,7 +462,7 @@ This is the one step that connects your extension to your server.
 2. The popup shows **"Not configured — open ⚙ Settings"**
 3. Click **⚙ Settings** at the bottom
 4. Fill in:
-   - **Backend URL:** your full server URL — `https://your-app.up.railway.app` or `https://your-app.fly.dev`
+   - **Backend URL:** your full server URL — `https://your-custom-domain.com`, `https://your-app.up.railway.app`, or `https://your-app.fly.dev`
    - **Dashboard Secret:** the `DASHBOARD_SECRET` value you set in Step 2
 5. Click **Save & reconnect**
 
@@ -382,7 +523,7 @@ You should see the email in the list with **Open Count: 1**. Click it for the fu
 | All opens show "Mountain View, CA" | Recipient is on Gmail — Google proxies the pixel through their servers. Expected. |
 | Dashboard shows "Unauthorized" | The `?key=` in your URL doesn't exactly match `DASHBOARD_SECRET` on the server. |
 | No emails appear in the dashboard | The extension may not have detected the Send button. Check the browser console on mail.google.com for `[PingPong]` log messages. |
-| Railway/Fly.io/Koyeb build failed | Check the build logs on your platform. Most common cause: `DATABASE_URL` not set correctly, or (for Koyeb) the **Service root** is not set to `server`. |
+| Railway/Fly.io/Koyeb/VPS setup failed | Check the build/setup logs. Most common cause: `DATABASE_URL` not set correctly, or (for Koyeb) the **Service root** is not set to `server`. |
 
 ---
 
@@ -395,7 +536,7 @@ You should see the email in the list with **Open Count: 1**. Click it for the fu
 | `server/package.json` | `postinstall` script auto-runs `prisma generate` after `npm install` |
 | `extension/` | Chrome extension — load unpacked, configure via popup |
 
-All three config files (`railway.json`, `fly.toml`, and the Koyeb settings you entered in the UI) coexist fine. Use whichever platform you deploy to — the others are simply ignored.
+All four config files/methods (PM2/Nginx, `railway.json`, `fly.toml`, and the Koyeb settings) coexist fine. Use whichever platform you deploy to — the others are simply ignored.
 
 ---
 
@@ -409,11 +550,12 @@ git commit -m "describe your change"
 git push
 ```
 
+- **Private VPS:** run `git pull`, `npm install`, `npx prisma migrate deploy` (if database schema changed), and restart the app with `pm2 restart pingpong` inside your `server/` folder.
 - **Railway:** auto-deploys from GitHub on every push (if you connected the repo)
 - **Fly.io:** run `flyctl deploy` from the `server/` folder
 - **Koyeb:** auto-deploys from GitHub on every push (if you connected the repo)
 
-Migrations run automatically on every deploy — you never need to run them manually.
+Migrations run automatically on every deploy/setup — you never need to run them manually.
 
 ---
 
