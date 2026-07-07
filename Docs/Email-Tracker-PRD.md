@@ -108,8 +108,10 @@ Two core tables, designed from day one to support per-recipient tracking even th
 - `userAgent` (string)
 - `approxLocation` (string, nullable — derived from IP via free geolocation lookup)
 - `recipientHint` (string, nullable — reserved for future per-recipient attribution; unused in v1 UI but present in schema)
+- `confidence` (enum: HIGH / MEDIUM / LOW — assigned at insert time based on User-Agent; see Phase 5.5)
+- `isFiltered` (boolean, default false — true if the hit was identified as a bot, proxy, or automated tool; filtered events are excluded from all open counts)
 
-This structure means: **total open count** = count of `OpenEvent` rows per `emailId`. **Individual open event list** = all `OpenEvent` rows for that `emailId`, sorted by `openedAt`.
+This structure means: **confirmed open count** = count of `OpenEvent` rows where `isFiltered = false` per `emailId`. **Individual open event list** = all `OpenEvent` rows for that `emailId`, sorted by `openedAt`.
 
 ---
 
@@ -183,6 +185,39 @@ This structure means: **total open count** = count of `OpenEvent` rows per `emai
 - [x] Full local end-to-end test: send a real Gmail from the extension pointing at `localhost:3000`, confirm open events log correctly, confirm dashboard displays them.
 
 **Deliverable:** Fully working system verified locally. Ready to deploy.
+
+---
+
+### **Phase 5.5: Open Accuracy — Bot Filtering (Option A) + Confidence Scoring (Option C)**
+
+Added after observing that mobile notification previews, background mail-app sync, and image proxy servers were causing false-positive open events.
+
+**Option A — Bot / Proxy Filter:**
+- [x] Implement `isBot(ua)` in `userAgentParser.js` with a comprehensive blocklist of non-human UA patterns:
+  - Email image proxies: `GoogleImageProxy`, Apple Privacy Relay (`Poczta`), Yahoo Mail Proxy, Microsoft Safe Links, Fastmail Proxy, Mail.ru Proxy.
+  - Email security scanners: Barracuda, Proofpoint, Mimecast, Symantec/MessageLabs, Cisco IronPort, FortiMail, Sophos, Trend Micro, Check Point, SpamAssassin, rspamd, Amazon SES, Vade Secure.
+  - Generic HTTP clients: curl, wget, Python requests, Go HTTP client, Java HTTP, OkHttp, Axios, node-fetch, etc.
+  - Web crawlers and uptime monitors: Googlebot, Bingbot, Pingdom, UptimeRobot, StatusCake, Semrush, Ahrefs, etc.
+  - Catch-all patterns: any UA string explicitly containing "bot", "crawler", "spider", "headless", "scraper", etc.
+  - Empty / missing User-Agent strings (always considered automated).
+- [x] Bot hits are **stored** in the database with `isFiltered = true` (preserving the audit trail) but are **never counted** as opens in the dashboard.
+- [x] Geo-lookup is skipped for filtered hits (the IP belongs to the proxy/scanner, not the recipient, so the location would be meaningless).
+
+**Option C — Confidence Scoring:**
+- [x] Implement `getConfidence(ua, parsedUA)` in `userAgentParser.js`, returning HIGH / MEDIUM / LOW:
+  - **HIGH**: Desktop email clients (Outlook, Thunderbird, eM Client, Postbox, Mailspring, Mimestream, Superhuman, HEY Mail, desktop Airmail/Spark) and desktop webmail browsers (Chrome, Edge, Firefox, Opera, macOS Safari/Mail) — these clients load images only on explicit user open.
+  - **MEDIUM**: Mobile clients (Gmail app, Apple Mail on iOS/iPad, Outlook for iOS/Android, Yahoo Mail mobile, mobile Safari) — susceptible to notification-preview and background-sync prefetches, so confident the pixel fired but not that a human deliberately read the message.
+  - **LOW**: Any UA not matched above — unrecognised clients, unusual strings, or patterns resembling proxies that slipped the isBot() filter.
+- [x] Add `OpenConfidence` enum to `schema.prisma` (HIGH / MEDIUM / LOW).
+- [x] Add `confidence` (enum, default LOW) and `isFiltered` (boolean, default false) fields to `OpenEvent` model.
+- [x] Create and apply migration: `20260707221407_add_confidence_and_filtered`.
+- [x] `pixel.js` computes and stores both fields on every `OpenEvent` insert.
+- [x] Dashboard list view shows **Confirmed Opens** (non-filtered), **Bot/Proxy Hits** count, and confidence-aware Last Opened.
+- [x] Dashboard detail view shows a per-event Confidence badge (✅ High / ⚠️ Medium / ❓ Low / 🤖 Filtered) and a summary chip breakdown in the hero panel.
+- [x] Timeline chart excludes filtered hits so bots don't inflate the visual trend.
+- [x] README and PRD updated to document the new system.
+
+**Deliverable:** Dashboard shows accurate, human-only open counts with full audit trail of all events (including bot/proxy hits). Mobile false positives are either filtered (proxies) or flagged (mobile apps) rather than silently inflating counts.
 
 ---
 
@@ -262,9 +297,11 @@ mailping/
 - No third-party analytics or external calls beyond the free IP-geolocation lookup service.
 
 ### 6.4 Known Limitations (to document clearly, not hide)
-- Gmail-to-Gmail opens will show Google's proxy server info rather than the recipient's real IP/location — this is a universal limitation of pixel tracking against Gmail, not a bug in this system.
+- Gmail-to-Gmail opens: Google's `GoogleImageProxy` is definitively filtered out (not counted). For Gmail users who open via webmail (Chrome/Firefox), the pixel fires normally and is counted with real confidence scoring.
+- Apple Mail Privacy Protection (MPP): Apple's Privacy Relay UA is detected and filtered out. Direct iOS/macOS Apple Mail opens are counted (iOS at Medium confidence due to notification-preview risk; macOS at High confidence).
+- Corporate email security scanners (Barracuda, Proofpoint, Mimecast, etc.) are detected by UA string and filtered out.
+- Mobile notification previews and background sync: these cannot be distinguished from genuine opens at the pixel level (same UA, same IP). They are classified as Medium confidence so the user understands there is uncertainty, but they cannot be definitively excluded without a two-stage confirmation mechanism (Option D — not implemented in this version).
 - Some email clients block remote images by default until the user clicks "show images" — meaning "opened" technically means "opened and loaded remote images," which is the same caveat every commercial email tracker has.
-- Apple Mail Privacy Protection (MPP) pre-fetches images for *all* emails regardless of whether the user actually reads them, which can produce false-positive "opens" for Apple Mail users — this is a known industry-wide limitation, not specific to this build.
 
 ---
 

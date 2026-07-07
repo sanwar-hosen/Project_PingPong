@@ -33,9 +33,25 @@
     </div>
     <div class="detail-hero-right">
       <div class="detail-open-count-display" id="detail-open-count">
-        <span class="detail-open-number"><%= opens.length %></span>
-        <span class="detail-open-label"><%= opens.length === 1 ? 'Open' : 'Opens' %></span>
+        <span class="detail-open-number"><%= opensSummary.confirmed %></span>
+        <span class="detail-open-label"><%= opensSummary.confirmed === 1 ? 'Confirmed Open' : 'Confirmed Opens' %></span>
       </div>
+      <% if (opensSummary.filtered > 0 || opensSummary.medium > 0 || opensSummary.low > 0) { %>
+      <div class="detail-confidence-breakdown" id="detail-confidence-breakdown">
+        <% if (opensSummary.high > 0) { %>
+          <span class="conf-chip conf-high" title="High confidence: desktop client, deliberate open">✅ <%= opensSummary.high %> High</span>
+        <% } %>
+        <% if (opensSummary.medium > 0) { %>
+          <span class="conf-chip conf-medium" title="Medium confidence: mobile app, may be notification/sync prefetch">⚠️ <%= opensSummary.medium %> Medium</span>
+        <% } %>
+        <% if (opensSummary.low > 0) { %>
+          <span class="conf-chip conf-low" title="Low confidence: unrecognised client or ambiguous signal">❓ <%= opensSummary.low %> Low</span>
+        <% } %>
+        <% if (opensSummary.filtered > 0) { %>
+          <span class="conf-chip conf-filtered" title="Bot / proxy hits — definitively non-human, excluded from counts">🤖 <%= opensSummary.filtered %> Filtered</span>
+        <% } %>
+      </div>
+      <% } %>
     </div>
   </section>
 
@@ -86,11 +102,42 @@
               <th>Opened At</th>
               <th>Location</th>
               <th>Device / Client</th>
+              <th class="text-center">Confidence</th>
               <th class="col-ip">IP Address</th>
             </tr>
           </thead>
           <tbody>
             <% opens.forEach(function(open) { %>
+              <% if (open.isFiltered) { %>
+              <!-- Filtered (bot/proxy) row — shown muted at the bottom, not counted -->
+              <tr class="open-event-row open-event-filtered" id="open-event-<%= open.id %>" title="Filtered: this hit was identified as a bot, proxy, or scanner and is excluded from open counts">
+                <td class="text-center">
+                  <span class="open-number-badge open-number-filtered">🤖</span>
+                </td>
+                <td class="cell-opened-at">
+                  <span class="opened-date" title="<%= new Date(open.openedAt).toISOString() %>">
+                    <%= new Date(open.openedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) %>
+                  </span>
+                  <span class="opened-time">
+                    <%= new Date(open.openedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) %>
+                  </span>
+                </td>
+                <td class="cell-location">
+                  <span class="location-unknown">N/A (proxy IP)</span>
+                </td>
+                <td class="cell-device">
+                  <span class="device-label filtered-label" title="<%= open.userAgent %>">
+                    🤖 <%= open.parsedUA.label %>
+                  </span>
+                </td>
+                <td class="text-center">
+                  <span class="conf-badge conf-badge-filtered">Filtered</span>
+                </td>
+                <td class="cell-ip col-ip">
+                  <code class="ip-address"><%= open.ipAddress %></code>
+                </td>
+              </tr>
+              <% } else { %>
               <tr class="open-event-row" id="open-event-<%= open.id %>">
                 <td class="text-center">
                   <span class="open-number-badge"><%= open.openNumber %></span>
@@ -124,10 +171,20 @@
                     <%= open.parsedUA.label %>
                   </span>
                 </td>
+                <td class="text-center">
+                  <% if (open.confidence === 'HIGH') { %>
+                    <span class="conf-badge conf-badge-high" title="High confidence: desktop client, deliberate open">✅ High</span>
+                  <% } else if (open.confidence === 'MEDIUM') { %>
+                    <span class="conf-badge conf-badge-medium" title="Medium confidence: mobile app — may be notification or background sync">⚠️ Medium</span>
+                  <% } else { %>
+                    <span class="conf-badge conf-badge-low" title="Low confidence: unrecognised client or ambiguous signal">❓ Low</span>
+                  <% } %>
+                </td>
                 <td class="cell-ip col-ip">
                   <code class="ip-address"><%= open.ipAddress %></code>
                 </td>
               </tr>
+              <% } %>
             <% }); %>
           </tbody>
         </table>
@@ -136,11 +193,14 @@
 
     <!-- ── Caveats Notice ───────────────────────────────────────────── -->
     <section class="detail-caveats" id="detail-caveats">
-      <h3>⚠️ Known Tracking Limitations</h3>
+      <h3>⚠️ Tracking Accuracy &amp; Confidence Guide</h3>
       <ul>
-        <li><strong>Gmail-to-Gmail:</strong> Opens may show Google's proxy server location (e.g. Mountain View, CA) instead of the recipient's real location.</li>
-        <li><strong>Image blocking:</strong> Some email clients block remote images by default — the email may have been read without triggering a tracked "open."</li>
-        <li><strong>Apple Mail Privacy Protection:</strong> MPP pre-fetches images for all emails, which can produce false-positive opens for Apple Mail users.</li>
+        <li><strong>✅ High Confidence:</strong> Desktop email clients (Outlook, Thunderbird, Apple Mail on Mac) and desktop webmail (Chrome, Firefox) — these only load images when a human actively opens the message.</li>
+        <li><strong>⚠️ Medium Confidence:</strong> Mobile email apps (Gmail app, Apple Mail on iPhone/iPad, Outlook mobile) — the OS or app may prefetch email content when a notification arrives, before the user actually reads it. The open may be genuine or may be a background prefetch.</li>
+        <li><strong>❓ Low Confidence:</strong> Unrecognised or ambiguous User-Agent — treat these with scepticism.</li>
+        <li><strong>🤖 Filtered (excluded):</strong> Definitively non-human hits — Google Image Proxy, Apple Privacy Relay, Yahoo Mail Proxy, corporate email security scanners (Barracuda, Proofpoint, Mimecast, etc.), and automated HTTP clients. These are recorded for audit purposes but never counted as opens.</li>
+        <li><strong>Gmail-to-Gmail:</strong> Confirmed opens from Gmail users will show Google's proxy server location (e.g. Mountain View, CA) instead of the recipient's real location. This is unavoidable with pixel tracking.</li>
+        <li><strong>Image blocking:</strong> Some clients block remote images by default — the email may have been read without triggering any tracked open.</li>
       </ul>
     </section>
   <% } %>
@@ -162,6 +222,7 @@
         
         const data = await response.json();
         const opens = data.opens || [];
+        const summary = data.opensSummary || { confirmed: 0, high: 0, medium: 0, low: 0, filtered: 0 };
         
         // 1. If currently in empty state and we have open events, reload to show chart & tables
         const emptyState = document.getElementById('detail-empty-state');
@@ -172,17 +233,18 @@
         
         if (opens.length === 0) return;
         
-        // 2. Check if opens count has increased
+        // 2. Check if confirmed opens count has increased
         const tbody = document.querySelector('#open-events-table tbody');
         if (!tbody) return;
         
-        const currentCount = tbody.querySelectorAll('.open-event-row').length;
-        if (opens.length > currentCount) {
-          // Update large open count counter
+        const currentConfirmedCount = tbody.querySelectorAll('.open-event-row:not(.open-event-filtered)').length;
+        const confirmedOpens = opens.filter(o => !o.isFiltered);
+        if (confirmedOpens.length > currentConfirmedCount) {
+          // Update large open count counter (confirmed only)
           const numDisplay = document.querySelector('.detail-open-number');
           const labelDisplay = document.querySelector('.detail-open-label');
-          if (numDisplay) numDisplay.textContent = opens.length;
-          if (labelDisplay) labelDisplay.textContent = opens.length === 1 ? 'Open' : 'Opens';
+          if (numDisplay) numDisplay.textContent = summary.confirmed;
+          if (labelDisplay) labelDisplay.textContent = summary.confirmed === 1 ? 'Confirmed Open' : 'Confirmed Opens';
           
           // Pulse the open counter badge
           const displayGroup = document.querySelector('.detail-open-count-display');
@@ -199,8 +261,8 @@
           }
           
           // Append new rows
-          for (let i = currentCount; i < opens.length; i++) {
-            const open = opens[i];
+          for (let i = currentConfirmedCount; i < confirmedOpens.length; i++) {
+            const open = confirmedOpens[i];
             const tr = document.createElement('tr');
             tr.className = 'open-event-row row-highlight';
             tr.id = `open-event-${open.id}`;
@@ -226,6 +288,15 @@
               icon = '🐧';
             }
             
+            let confBadge = '';
+            if (open.confidence === 'HIGH') {
+              confBadge = '<span class="conf-badge conf-badge-high" title="High confidence: desktop client, deliberate open">✅ High</span>';
+            } else if (open.confidence === 'MEDIUM') {
+              confBadge = '<span class="conf-badge conf-badge-medium" title="Medium confidence: mobile app — may be notification or background sync">⚠️ Medium</span>';
+            } else {
+              confBadge = '<span class="conf-badge conf-badge-low" title="Low confidence: unrecognised client or ambiguous signal">❓ Low</span>';
+            }
+            
             tr.innerHTML = `
               <td class="text-center">
                 <span class="open-number-badge">${open.openNumber}</span>
@@ -241,6 +312,9 @@
                 <span class="device-label" title="${escapeHtml(open.userAgent)}">
                   ${icon} ${escapeHtml(open.parsedUA.label)}
                 </span>
+              </td>
+              <td class="text-center">
+                ${confBadge}
               </td>
               <td class="cell-ip col-ip">
                 <code class="ip-address">${escapeHtml(open.ipAddress)}</code>

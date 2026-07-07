@@ -38,12 +38,16 @@
         <span class="stat-label">Total Emails</span>
       </div>
       <div class="stat-card">
-        <span class="stat-value"><%= emails.reduce((sum, e) => sum + e._count.opens, 0) %></span>
-        <span class="stat-label">Total Opens</span>
+        <span class="stat-value"><%= emails.reduce((sum, e) => sum + e.opensSummary.confirmed, 0) %></span>
+        <span class="stat-label">Confirmed Opens</span>
       </div>
       <div class="stat-card">
-        <span class="stat-value"><%= emails.filter(e => e._count.opens > 0).length %></span>
+        <span class="stat-value"><%= emails.filter(e => e.opensSummary.confirmed > 0).length %></span>
         <span class="stat-label">Emails Opened</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value"><%= emails.reduce((sum, e) => sum + e.opensSummary.filtered, 0) %></span>
+        <span class="stat-label">Bot / Proxy Hits</span>
       </div>
     </div>
 
@@ -55,7 +59,7 @@
             <th>Subject</th>
             <th>Recipient</th>
             <th>Sent</th>
-            <th class="text-center">Opens</th>
+            <th class="text-center">Confirmed Opens</th>
             <th>Last Opened</th>
             <th class="text-center">Action</th>
           </tr>
@@ -78,15 +82,21 @@
                 </span>
               </td>
               <td class="cell-opens text-center">
-                <% if (email._count.opens > 0) { %>
-                  <span class="badge badge-opened"><%= email._count.opens %></span>
+                <% if (email.opensSummary.confirmed > 0) { %>
+                  <span class="badge badge-opened"><%= email.opensSummary.confirmed %></span>
+                  <% if (email.opensSummary.filtered > 0) { %>
+                    <span class="badge-bot-hint" title="<%= email.opensSummary.filtered %> bot/proxy hit(s) excluded">+<%= email.opensSummary.filtered %> 🤖</span>
+                  <% } %>
+                <% } else if (email.opensSummary.filtered > 0) { %>
+                  <span class="badge badge-unopened">0</span>
+                  <span class="badge-bot-hint" title="<%= email.opensSummary.filtered %> bot/proxy hit(s) excluded">+<%= email.opensSummary.filtered %> 🤖</span>
                 <% } else { %>
                   <span class="badge badge-unopened">0</span>
                 <% } %>
               </td>
               <td class="cell-last-opened">
-                <% if (email.opens && email.opens.length > 0) { %>
-                  <% var lastOpen = new Date(email.opens[0].openedAt); %>
+                <% if (email.lastRealOpen) { %>
+                  <% var lastOpen = new Date(email.lastRealOpen.openedAt); %>
                   <span class="last-opened-date" title="<%= lastOpen.toISOString() %>">
                     <%= lastOpen.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %>
                   </span>
@@ -137,14 +147,16 @@
         
         // 2. Update Stats Bar
         const statCards = document.querySelectorAll('.stat-card');
-        if (statCards.length === 3) {
+        if (statCards.length === 4) {
           const totalEmailsVal = emails.length;
-          const totalOpensVal = emails.reduce((sum, e) => sum + e._count.opens, 0);
-          const emailsOpenedVal = emails.filter(e => e._count.opens > 0).length;
+          const confirmedOpensVal = emails.reduce((sum, e) => sum + (e.opensSummary ? e.opensSummary.confirmed : 0), 0);
+          const emailsOpenedVal = emails.filter(e => e.opensSummary && e.opensSummary.confirmed > 0).length;
+          const filteredVal = emails.reduce((sum, e) => sum + (e.opensSummary ? e.opensSummary.filtered : 0), 0);
           
           updateStatCard(statCards[0], totalEmailsVal);
-          updateStatCard(statCards[1], totalOpensVal);
+          updateStatCard(statCards[1], confirmedOpensVal);
           updateStatCard(statCards[2], emailsOpenedVal);
+          updateStatCard(statCards[3], filteredVal);
         }
         
         // 3. Update Table Rows
@@ -168,12 +180,17 @@
             const dateStr = sentAtDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             const timeStr = sentAtDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
             
-            const opensCount = email._count.opens;
-            const badgeClass = opensCount > 0 ? 'badge-opened' : 'badge-unopened';
+            const summary = email.opensSummary || { confirmed: 0, filtered: 0 };
+            const badgeClass = summary.confirmed > 0 ? 'badge-opened' : 'badge-unopened';
+            
+            let botHintHtml = '';
+            if (summary.filtered > 0) {
+              botHintHtml = `<span class="badge-bot-hint" title="${summary.filtered} bot/proxy hit(s) excluded">+${summary.filtered} 🤖</span>`;
+            }
             
             let lastOpenedHtml = '<span class="not-opened-yet">Not opened yet</span>';
-            if (email.opens && email.opens.length > 0) {
-              const lastOpenDate = new Date(email.opens[0].openedAt);
+            if (email.lastRealOpen) {
+              const lastOpenDate = new Date(email.lastRealOpen.openedAt);
               const loDateStr = lastOpenDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               const loTimeStr = lastOpenDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
               lastOpenedHtml = `
@@ -194,7 +211,8 @@
                 <span class="sent-time">${timeStr}</span>
               </td>
               <td class="cell-opens text-center">
-                <span class="badge ${badgeClass}">${opensCount}</span>
+                <span class="badge ${badgeClass}">${summary.confirmed}</span>
+                ${botHintHtml}
               </td>
               <td class="cell-last-opened">
                 ${lastOpenedHtml}
@@ -216,15 +234,27 @@
             // Row exists, check for open count updates
             const badge = existingRow.querySelector('.cell-opens .badge');
             if (badge) {
+              const summary = email.opensSummary || { confirmed: 0, filtered: 0 };
               const currentOpens = parseInt(badge.textContent, 10);
-              const newOpens = email._count.opens;
-              if (newOpens !== currentOpens) {
+              if (summary.confirmed !== currentOpens) {
                 // Update badge text and classes
-                badge.textContent = newOpens;
-                if (newOpens > 0) {
+                badge.textContent = summary.confirmed;
+                if (summary.confirmed > 0) {
                   badge.className = 'badge badge-opened badge-pulse';
                 } else {
                   badge.className = 'badge badge-unopened badge-pulse';
+                }
+                
+                // Update bot hint
+                let existingHint = existingRow.querySelector('.badge-bot-hint');
+                if (summary.filtered > 0) {
+                  if (!existingHint) {
+                    existingHint = document.createElement('span');
+                    existingHint.className = 'badge-bot-hint';
+                    badge.parentNode.appendChild(existingHint);
+                  }
+                  existingHint.title = `${summary.filtered} bot/proxy hit(s) excluded`;
+                  existingHint.textContent = `+${summary.filtered} 🤖`;
                 }
                 
                 // Highlight the row
@@ -232,8 +262,8 @@
                 
                 // Update "Last Opened" cell
                 const cellLastOpened = existingRow.querySelector('.cell-last-opened');
-                if (cellLastOpened && email.opens && email.opens.length > 0) {
-                  const lastOpenDate = new Date(email.opens[0].openedAt);
+                if (cellLastOpened && email.lastRealOpen) {
+                  const lastOpenDate = new Date(email.lastRealOpen.openedAt);
                   const loDateStr = lastOpenDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                   const loTimeStr = lastOpenDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                   cellLastOpened.innerHTML = `

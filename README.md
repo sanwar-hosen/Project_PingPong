@@ -562,20 +562,55 @@ You should see the email in the list with **Open Count: 1**. Click it for the fu
 
 | URL | What it shows |
 |---|---|
-| `/dashboard?key=YOUR_SECRET` | List of all tracked emails with open counts |
-| `/dashboard/email/:id` | Full open history for one email — timestamp, location, device per open |
+| `/dashboard?key=YOUR_SECRET` | List of all tracked emails — shows Confirmed Opens (human, non-bot), Bot/Proxy Hits count, and Last Opened |
+| `/dashboard/email/:id` | Full open history — timestamp, location, device, confidence level per event; filtered bot hits shown in a muted separate section |
 
 **Tip:** Bookmark the full dashboard URL including `?key=YOUR_SECRET` — you'll need it every time. There's no password screen; the secret in the URL is your access control.
 
+**Reading the confidence badges:**
+- ✅ **High** — Desktop open. Very likely a genuine human read.
+- ⚠️ **Medium** — Mobile open. Could be genuine or a notification/sync prefetch.
+- ❓ **Low** — Unknown client. Treat with caution.
+- 🤖 **Filtered** — Bot, proxy, or scanner. Not counted as an open.
+
 ---
 
-## Known limitations (industry-wide, not specific to PingPong)
+## Understanding open confidence scores
+
+Not every pixel hit is a genuine human open. PingPong now automatically classifies every event and filters out noise so the numbers you see are accurate.
+
+### Bot / Proxy Filter (automatically excluded)
+
+These are recorded in the database for audit purposes but **never counted as opens**:
+
+| Source | Why it's excluded |
+|---|---|
+| **Google Image Proxy** | Gmail routes all images through Google's servers — the hit comes from Google, not your recipient |
+| **Apple Privacy Relay (MPP)** | Apple pre-fetches images for all incoming emails before the user reads them |
+| **Yahoo Mail Proxy** | Same as Google — Yahoo proxies images on behalf of its users |
+| **Email security scanners** | Barracuda, Proofpoint, Mimecast, Symantec, Cisco IronPort, etc. — these scan links and images automatically |
+| **Automated HTTP clients** | curl, Python requests, Go HTTP client, etc. |
+| **Web crawlers / uptime monitors** | Googlebot, Pingdom, UptimeRobot, etc. |
+
+### Confidence Levels (for non-filtered opens)
+
+| Level | Meaning | Example clients |
+|---|---|---|
+| ✅ **High** | Desktop client — images only load when the user actively opens the message | Outlook, Thunderbird, Apple Mail (macOS), Chrome/Firefox webmail |
+| ⚠️ **Medium** | Mobile client — may be a real open, or may be a notification preview / background sync | Gmail app (iOS/Android), Apple Mail (iOS), Outlook mobile, Samsung Email |
+| ❓ **Low** | Unrecognised or ambiguous client | Unknown UA strings, unusual clients |
+
+The dashboard shows **Confirmed Opens** (all non-filtered events, regardless of confidence level), with a breakdown of High / Medium / Low / Filtered counts visible in the detail view.
+
+## Known limitations (industry-wide)
 
 | Situation | What you'll see |
 |---|---|
-| **Recipient uses Gmail** | Opens show Google's proxy server location (Mountain View, CA) instead of the recipient's real location. This affects every pixel tracker, not just PingPong. |
-| **Recipient uses Apple Mail** | Apple Mail Privacy Protection may pre-fetch the pixel even before the email is opened, causing a false "open" notification. |
-| **Recipient's app blocks remote images** | No open will be logged until they click "Show images" — same as every commercial tracker. |
+| **Recipient uses Gmail** | Opens may show Google's proxy server location (Mountain View, CA) \u2014 the pixel still fires and is counted, but the IP/location belongs to Google's network. The `GoogleImageProxy` variant is filtered out entirely; direct Gmail webmail opens are counted normally. |
+| **Recipient uses Apple Mail on iOS** | Apple's Privacy Relay prefetch is filtered out. Direct iOS Mail app opens are recorded at Medium confidence \u2014 may be a real read or a notification-preview sync. |
+| **Recipient uses Apple Mail on macOS** | Desktop Apple Mail opens are counted at High confidence. |
+| **Corporate email security** | Barracuda, Proofpoint, Mimecast, Symantec etc. scan the pixel before delivery \u2014 these are filtered out and never counted as opens. |
+| **Recipient's app blocks remote images** | No open will be logged until they click "Show images" \u2014 same as every commercial tracker. |
 
 ---
 

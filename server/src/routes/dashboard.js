@@ -62,6 +62,40 @@ function requireDashboardAuth(req, res, next) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helpers — confidence-aware open count computation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Given an array of OpenEvent objects (with `isFiltered` and `confidence` fields),
+ * returns a summary object used by both server-rendered templates and the JSON API.
+ *
+ * @param {Array<{ isFiltered: boolean, confidence: string }>} opens
+ * @returns {{
+ *   total:      number,   // All events including filtered/bot hits
+ *   confirmed:  number,   // Real opens (isFiltered=false), any confidence
+ *   high:       number,   // isFiltered=false AND confidence=HIGH
+ *   medium:     number,   // isFiltered=false AND confidence=MEDIUM
+ *   low:        number,   // isFiltered=false AND confidence=LOW
+ *   filtered:   number,   // isFiltered=true (bots/proxies)
+ * }}
+ */
+function buildOpensSummary(opens) {
+  const summary = { total: 0, confirmed: 0, high: 0, medium: 0, low: 0, filtered: 0 };
+  for (const open of opens) {
+    summary.total++;
+    if (open.isFiltered) {
+      summary.filtered++;
+    } else {
+      summary.confirmed++;
+      if (open.confidence === 'HIGH')   summary.high++;
+      if (open.confidence === 'MEDIUM') summary.medium++;
+      if (open.confidence === 'LOW')    summary.low++;
+    }
+  }
+  return summary;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /dashboard?key=<secret>
 //
 // List view: all tracked emails with open counts, sorted newest-first.
@@ -71,25 +105,36 @@ router.get('/', requireDashboardAuth, async (req, res, next) => {
     const emails = await prisma.email.findMany({
       orderBy: { sentAt: 'desc' },
       include: {
-        _count: {
-          select: { opens: true },
-        },
-        // Fetch only the most recent open event for the "Last Opened" column
+        // Fetch all open events so we can compute confidence-aware counts.
+        // At the target volume (<100 emails, each with a handful of opens)
+        // this is cheaper than multiple aggregation queries.
         opens: {
+          select: {
+            id:         true,
+            openedAt:   true,
+            isFiltered: true,
+            confidence: true,
+          },
           orderBy: { openedAt: 'desc' },
-          take: 1,
-          select: { openedAt: true },
         },
       },
     });
 
+    // Enrich each email with a summary of its open events
+    const enrichedEmails = emails.map((email) => ({
+      ...email,
+      opensSummary: buildOpensSummary(email.opens),
+      // Keep the most recent real (non-filtered) open for the "Last Opened" column
+      lastRealOpen: email.opens.find((o) => !o.isFiltered) || null,
+    }));
+
     if (req.query.format === 'json') {
-      return res.json({ emails });
+      return res.json({ emails: enrichedEmails });
     }
 
     res.render('list', {
       title: 'Tracked Emails',
-      emails,
+      emails: enrichedEmails,
       dashboardKey: res.locals.dashboardKey,
     });
   } catch (err) {
@@ -121,21 +166,35 @@ router.get('/email/:id', requireDashboardAuth, async (req, res, next) => {
       return res.status(404).send('Email not found');
     }
 
+    // ── Build summary counts ───────────────────────────────────────────────
+    const opensSummary = buildOpensSummary(email.opens);
+
     // Parse User-Agent strings into human-readable labels
     const { parseUserAgent } = require('../lib/userAgentParser');
-    const opensWithParsedUA = email.opens.map((open, index) => ({
-      ...open,
-      openNumber: index + 1,
-      parsedUA: parseUserAgent(open.userAgent),
-    }));
+
+    // Real opens (non-filtered) — these are what we show in the event table
+    // Numbered sequentially for display (so #1 is the first confirmed human open)
+    let confirmedIndex = 0;
+    const opensWithParsedUA = email.opens.map((open) => {
+      const parsedUA = parseUserAgent(open.userAgent);
+      const displayNumber = open.isFiltered ? null : ++confirmedIndex;
+      return {
+        ...open,
+        openNumber: displayNumber,
+        parsedUA,
+      };
+    });
 
     // ── Build "opens over time" data for the mini timeline chart ──────────
-    // Group open events by date (YYYY-MM-DD) and count per day.
+    // Only count real (non-filtered) opens in the timeline chart so bots
+    // don't inflate the visual.
     const opensByDay = {};
-    email.opens.forEach((open) => {
-      const dayKey = new Date(open.openedAt).toISOString().slice(0, 10); // "2026-07-05"
-      opensByDay[dayKey] = (opensByDay[dayKey] || 0) + 1;
-    });
+    email.opens
+      .filter((o) => !o.isFiltered)
+      .forEach((open) => {
+        const dayKey = new Date(open.openedAt).toISOString().slice(0, 10);
+        opensByDay[dayKey] = (opensByDay[dayKey] || 0) + 1;
+      });
 
     // Convert to sorted array for the chart
     const timelineData = Object.entries(opensByDay)
@@ -149,8 +208,9 @@ router.get('/email/:id', requireDashboardAuth, async (req, res, next) => {
       return res.json({
         email,
         opens: opensWithParsedUA,
+        opensSummary,
         timelineData,
-        maxDayCount
+        maxDayCount,
       });
     }
 
@@ -158,6 +218,7 @@ router.get('/email/:id', requireDashboardAuth, async (req, res, next) => {
       title: `${email.subject || '(No subject)'} — Detail`,
       email,
       opens: opensWithParsedUA,
+      opensSummary,
       timelineData,
       maxDayCount,
       dashboardKey: res.locals.dashboardKey,

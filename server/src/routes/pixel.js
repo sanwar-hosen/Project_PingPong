@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const prisma = require('../lib/prismaClient');
 const { geoLookup } = require('../lib/geoLookup');
+const { isBot, parseUserAgent, getConfidence } = require('../lib/userAgentParser');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1x1 Transparent GIF — canonical 35-byte GIF89a payload
@@ -43,6 +44,18 @@ function extractIp(req) {
 //   This route must NEVER return an error response visible to the email client.
 //   Even if the database write fails, we still return the GIF.
 //   The outer try/catch around the DB work ensures this.
+//
+// FILTERING (Option A):
+//   Requests from known image proxies, security scanners, and automated
+//   HTTP clients are detected via isBot(). These hits are still written to
+//   the database (for audit trail and analytics) with isFiltered=true, but
+//   they are excluded from open counts and the main events table shown to
+//   the user in the dashboard.
+//
+// CONFIDENCE SCORING (Option C):
+//   Non-bot requests are classified HIGH / MEDIUM / LOW based on the
+//   User-Agent, reflecting how likely it is that a human deliberately
+//   opened the email rather than the OS/app doing it automatically.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/:trackingId.gif', async (req, res) => {
   // ── Step 1: Send image headers immediately ───────────────────────────────
@@ -60,11 +73,21 @@ router.get('/:trackingId.gif', async (req, res) => {
   const ipAddress = extractIp(req);
   const userAgent = req.headers['user-agent'] || 'unknown';
 
-  // ── Step 2: Log the open event (wrapped in try/catch for reliability) ─────
+  // ── Step 2: Classify the request ─────────────────────────────────────────
+  const filtered = isBot(userAgent);
+  const parsedUA = parseUserAgent(userAgent);
+  // getConfidence is only meaningful for non-bot hits, but we compute it for
+  // all rows — for filtered rows it will be LOW, which is correct.
+  const confidence = filtered ? 'LOW' : getConfidence(userAgent, parsedUA);
+
+  // ── Step 3: Log the open event (wrapped in try/catch for reliability) ─────
   try {
     let shouldLog = true;
 
-    // Check for rapid repeated opens (debounce window of 2 seconds)
+    // ── Debounce: skip rapid repeated hits from the same IP ─────────────────
+    // 2-second window eliminates technical duplicate fetches (e.g. some
+    // clients request the image twice in the same render cycle).
+    // We still let genuine re-opens through after the window expires.
     const lastOpen = await prisma.openEvent.findFirst({
       where: {
         emailId: trackingId,
@@ -83,11 +106,12 @@ router.get('/:trackingId.gif', async (req, res) => {
     }
 
     if (shouldLog) {
-      // Geo-lookup runs concurrently while we do the DB upsert.
-      // We await both, but if geo fails it returns null — no blocking.
-      const [approxLocation] = await Promise.allSettled([
-        geoLookup(ipAddress),
-      ]).then((results) => results.map((r) => (r.status === 'fulfilled' ? r.value : null)));
+      // Geo-lookup runs concurrently — if it fails it returns null, no blocking.
+      // We skip geo for filtered (bot) hits: the IP belongs to the proxy/scanner,
+      // not the recipient, so the location would be misleading.
+      const approxLocation = filtered
+        ? null
+        : await geoLookup(ipAddress).catch(() => null);
 
       // ── Upsert the Email row ──────────────────────────────────────────────
       // If the extension called POST /api/emails first (the happy path), this
@@ -108,17 +132,25 @@ router.get('/:trackingId.gif', async (req, res) => {
       // ── Insert the OpenEvent ──────────────────────────────────────────────
       await prisma.openEvent.create({
         data: {
-          emailId: trackingId,
+          emailId:       trackingId,
           ipAddress,
           userAgent,
-          approxLocation,   // null if lookup failed — that's fine
-          recipientHint: null, // Reserved for v2 per-recipient attribution
+          approxLocation,   // null if filtered or lookup failed — that's fine
+          recipientHint:    null,   // Reserved for v2 per-recipient attribution
+          confidence,               // HIGH / MEDIUM / LOW
+          isFiltered:       filtered, // true = bot/proxy — excluded from counts
         },
       });
 
-      console.log(
-        `[pixel] Open logged | trackingId=${trackingId} | ip=${ipAddress} | location=${approxLocation ?? 'unknown'}`
-      );
+      if (filtered) {
+        console.log(
+          `[pixel] Filtered (bot/proxy) | trackingId=${trackingId} | ip=${ipAddress} | ua="${userAgent.slice(0, 80)}"`
+        );
+      } else {
+        console.log(
+          `[pixel] Open logged | confidence=${confidence} | trackingId=${trackingId} | ip=${ipAddress} | location=${approxLocation ?? 'unknown'}`
+        );
+      }
     }
   } catch (err) {
     // DB write failed — log the error server-side, but DO NOT surface it
@@ -126,7 +158,7 @@ router.get('/:trackingId.gif', async (req, res) => {
     console.error(`[pixel] Failed to log open event | trackingId=${trackingId} | error:`, err.message);
   }
 
-  // ── Step 3: Always return the GIF ────────────────────────────────────────
+  // ── Step 4: Always return the GIF ────────────────────────────────────────
   // This runs regardless of whether the DB write succeeded or failed.
   res.end(TRANSPARENT_GIF);
 });

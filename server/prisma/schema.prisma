@@ -15,6 +15,30 @@ datasource db {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OpenConfidence
+//
+// Represents how confident we are that an OpenEvent was caused by a real
+// human deliberately reading the email, rather than an automated prefetch
+// or proxy request.
+//
+//   HIGH   — Desktop email clients / webmail. Images load only on explicit open.
+//            Outlook, Thunderbird, desktop Apple Mail, Chrome/Firefox webmail, etc.
+//
+//   MEDIUM — Mobile clients (Gmail app, Apple Mail on iOS/Android, Outlook
+//            mobile). These apps are documented to prefetch email content on
+//            notification arrival and background sync, so a pixel hit from
+//            them may or may not reflect a genuine human open.
+//
+//   LOW    — Known image proxy, security scanner, or completely unrecognised
+//            User-Agent. Very likely an automated/machine fetch.
+// ─────────────────────────────────────────────────────────────────────────────
+enum OpenConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Email
 // Represents one tracked outgoing email.
 // id = the UUID embedded in the pixel URL (/pixel/:id.gif)
@@ -35,20 +59,35 @@ model Email {
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenEvent
 // One row per pixel load = one "open" of the parent email.
+//
+// New fields (Option A + C):
+//   confidence  — How likely this hit represents a genuine human open.
+//                 Computed from the User-Agent at insert time.
+//                 Defaults to LOW so old rows are conservative.
+//
+//   isFiltered  — True if the hit was definitively identified as a non-human
+//                 fetcher (image proxy, security scanner, automated bot).
+//                 Filtered events are stored for audit purposes but excluded
+//                 from all open counts and the main event table in the dashboard.
 // ─────────────────────────────────────────────────────────────────────────────
 model OpenEvent {
-  id              String   @id @default(uuid())
+  id              String          @id @default(uuid())
   emailId         String                           // FK → Email.id
-  openedAt        DateTime @default(now())
+  openedAt        DateTime        @default(now())
   ipAddress       String
   userAgent       String
   approxLocation  String?                          // Derived from IP via ip-api.com; null if lookup fails
   recipientHint   String?                          // Reserved for future per-recipient attribution (v2+)
+
+  // ── Confidence scoring (Option C) ─────────────────────────────────────
+  confidence      OpenConfidence  @default(LOW)    // HIGH / MEDIUM / LOW — see enum above
+  isFiltered      Boolean         @default(false)  // true = definitively non-human (Option A bot filter)
 
   // Relations
   email           Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
 
   @@index([emailId])          // Fast lookup of all opens for a given email
   @@index([openedAt])         // Fast time-range queries
+  @@index([emailId, isFiltered]) // Fast filtered/unfiltered counts per email
   @@map("open_events")
 }
