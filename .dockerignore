@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Docs & extension (not needed in the server image)
+Docs/
+extension/
+
+# Node modules (will be installed fresh in Docker)
+node_modules/
+server/node_modules/
+
+# Environment files (set via Railway env vars)
+.env
+server/.env
+server/.env.local
+server/.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Railway local config
+.railway/
