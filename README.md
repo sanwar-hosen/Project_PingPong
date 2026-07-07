@@ -345,11 +345,14 @@ Your app needs a database to store the tracking data. Railway can create one for
    |---|---|
    | `DASHBOARD_SECRET` | A long random password — generate one at [randomkeygen.com](https://randomkeygen.com), use any key from the **"Strong Passwords"** section. Must be 40+ characters. **Write this down somewhere safe — you'll need it every time you open your dashboard.** |
    | `NODE_ENV` | `production` |
+   | `PORT` | `3000` |
    | `BASE_URL` | Leave this blank for now — you will fill it in after the next step |
 
 4. After adding each variable, click the **checkmark** (✓) or press **Enter** to save it
 
 > **Note:** `DATABASE_URL` is already there — Railway added it automatically in the previous step. Don't delete it.
+
+> **Why `PORT=3000`?** Railway injects a `PORT` environment variable into your container automatically, but it can be unpredictable. Setting it explicitly to `3000` ensures your server always listens on the same port that Railway's router expects. **Never skip this variable.**
 
 #### Step 2C.6 — Generate your public URL
 
@@ -359,11 +362,20 @@ Your app needs a public URL so the Chrome extension can reach it:
 2. Click the **Settings** tab at the top of the side panel
 3. Scroll down until you see the **Networking** section
 4. Under **Public Networking**, click **Generate Domain**
-5. Railway creates a URL for you — it looks like:
-   `https://pingpong-production-abc123.up.railway.app`
-6. **Click the copy icon** next to that URL to copy it
+5. Railway creates a URL for you and shows a port number underneath it — for example:
+   ```
+   projectpingpong-production.up.railway.app
+   → Port 3000
+   ```
+   **If Railway asks you to enter a port when generating the domain, type `3000`.** This must match the `PORT` variable you set in Step 2C.5.
+6. **Click the copy icon** next to the domain to copy it
 7. Now click the **Variables** tab again
-8. Find the `BASE_URL` variable you left blank, click the **pencil icon** to edit it, paste your URL, and press **Enter** to save
+8. Find the `BASE_URL` variable you left blank, click the **pencil icon** to edit it, and paste **only the domain URL — no port number**:
+   - ✅ Correct: `https://projectpingpong-production.up.railway.app`
+   - ❌ Wrong: `https://projectpingpong-production.up.railway.app:3000`
+9. Press **Enter** to save
+
+> **Why no port in BASE_URL?** The port shown under the domain (e.g. `→ Port 3000`) is Railway's *internal* routing port — it's not part of the public address. Your public URL always uses standard HTTPS (port 443) externally, and Railway handles the internal routing automatically.
 
 #### Step 2C.7 — Trigger a fresh deployment
 
