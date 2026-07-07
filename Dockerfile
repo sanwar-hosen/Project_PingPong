@@ -3,22 +3,25 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files from the server subdirectory
+# Copy package files AND the prisma schema before npm install.
+# The postinstall script runs "prisma generate" which needs the schema file.
 COPY server/package*.json ./
-RUN npm ci --only=production
+COPY server/prisma ./prisma
+
+# Install ALL deps (including devDependencies like prisma CLI) so
+# postinstall can run "prisma generate" successfully.
+RUN npm ci
 
 # Copy the rest of the server source
-COPY server/ ./
-
-# Generate Prisma client
-RUN npx prisma generate
+COPY server/src ./src
+COPY server/public ./public
 
 # ── Stage 2: Production ───────────────────────────────────────────────────────
 FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Copy built artifacts from builder
+# Copy everything from builder (node_modules, src, prisma, generated client)
 COPY --from=builder /app ./
 
 # Expose port (Railway sets PORT env var automatically)
