@@ -282,19 +282,26 @@ If you see that — ✅ your server is running. The database tables were created
 
 ---
 
-### Option C — Railway (easiest, no CLI required)
+### Option C — Railway
+
+> **Cost note:** Railway requires a credit card after your free trial period. If you don't want to add a card, use **Option B (Koyeb + Neon)** instead.
 
 #### Step 2C.1 — Create a Railway account
-1. Go to [railway.app](https://railway.app) and click **Sign Up**
-2. Log in with GitHub (fastest option — Railway will ask permission to access your repos)
-3. Verify your email if prompted
 
-#### Step 2C.2 — Push your code to GitHub
+1. Go to [railway.app](https://railway.app)
+2. Click **Login** (top-right corner)
+3. Choose **Login with GitHub** — Railway asks for permission to access your GitHub repos. Click **Authorize**
+4. If Railway asks you to verify your email, do that first
 
-If your code isn't on GitHub yet:
-1. Go to [github.com/new](https://github.com/new) and create a new **empty** repository (name it anything, e.g. `pingpong`)
-2. Make it **Private** (your tracking data is private — keep the code private too)
-3. Open a terminal in the `Project_PingPong` folder and run:
+#### Step 2C.2 — Push your code to GitHub *(skip if already done)*
+
+Railway deploys directly from GitHub. Your code needs to be in a GitHub repository first.
+
+1. Go to [github.com/new](https://github.com/new)
+2. Give the repository any name (e.g. `pingpong`)
+3. Set visibility to **Private** (recommended — your tracking data is private)
+4. Click **Create repository**
+5. GitHub shows you setup commands. Open a terminal inside your `Project_PingPong` folder and run these:
 
 ```bash
 git init
@@ -305,39 +312,86 @@ git branch -M main
 git push -u origin main
 ```
 
-#### Step 2C.3 — Create the Railway project
-1. In Railway: **New Project → Deploy from GitHub repo**
-2. Select your `pingpong` repository
-3. Railway detects it's Node.js automatically — the `server/railway.json` file handles all build and start configuration. **No manual setup needed.**
+> Replace `YOUR_USERNAME` with your actual GitHub username.
 
-#### Step 2C.4 — Add a database
-1. Inside the same Railway project, click **+ New** → **Database** → **Add PostgreSQL**
-2. Railway automatically creates a `DATABASE_URL` variable and links it to your app. You'll see it appear in your service's **Variables** tab.
+#### Step 2C.3 — Create a new Railway project
+
+1. In Railway, click the **+ New Project** button (top-right area of the dashboard)
+2. From the dropdown, click **Deploy from GitHub repo**
+3. If you don't see your repository, click **Configure GitHub App** and grant Railway access to your repo
+4. Find and click your `pingpong` repository
+5. Railway immediately starts a deployment — **wait for it to finish** (it will fail at first because the database isn't connected yet — that's expected)
+
+> Railway detects the `Dockerfile` at the root of your project and uses it automatically. No build settings need to be changed.
+
+#### Step 2C.4 — Add a PostgreSQL database
+
+Your app needs a database to store the tracking data. Railway can create one for you inside the same project:
+
+1. You should be inside your Railway project now. Look at the canvas (the big grey area with your service on it)
+2. Click the **+ Add a service** button (or the **+** button in the top-right of the canvas area)
+3. From the menu that appears, click **Database**
+4. Click **Add PostgreSQL**
+5. Railway creates a PostgreSQL database and adds it to your project canvas as a new box
+6. Railway **automatically** creates a `DATABASE_URL` variable and connects it to your app service — you don't need to copy/paste anything
 
 #### Step 2C.5 — Set environment variables
 
-In your Railway app service → **Variables** tab, add these three:
+1. On the project canvas, click on **your app service** (the box that's not the PostgreSQL one)
+2. A side panel opens on the right — click the **Variables** tab at the top of that panel
+3. Click **+ New Variable** and add each of the following one by one:
 
-| Variable | Value |
-|---|---|
-| `DASHBOARD_SECRET` | Make up a long random password (40+ characters). Generate one at [randomkeygen.com](https://randomkeygen.com) — use the "CodeIgniter Encryption Keys" section. **Write this down — you'll need it to open your dashboard.** |
-| `NODE_ENV` | `production` |
-| `BASE_URL` | Leave blank for now — you'll fill this in after the next step |
+   | Variable | Value |
+   |---|---|
+   | `DASHBOARD_SECRET` | A long random password — generate one at [randomkeygen.com](https://randomkeygen.com), use any key from the **"Strong Passwords"** section. Must be 40+ characters. **Write this down somewhere safe — you'll need it every time you open your dashboard.** |
+   | `NODE_ENV` | `production` |
+   | `BASE_URL` | Leave this blank for now — you will fill it in after the next step |
 
-#### Step 2C.6 — Get your Railway URL
-1. In your Railway app service → **Settings** → **Networking** → click **Generate Domain**
-2. You'll get a URL like `https://pingpong-production-abc123.up.railway.app`
-3. **Copy this URL**
-4. Now go back to the Variables tab and set `BASE_URL` to this URL
+4. After adding each variable, click the **checkmark** (✓) or press **Enter** to save it
 
-#### Step 2C.7 — Verify the server is live
+> **Note:** `DATABASE_URL` is already there — Railway added it automatically in the previous step. Don't delete it.
 
-Visit `https://YOUR-RAILWAY-URL/health` in your browser. You should see:
+#### Step 2C.6 — Generate your public URL
+
+Your app needs a public URL so the Chrome extension can reach it:
+
+1. Make sure you're still looking at your **app service** panel (not PostgreSQL)
+2. Click the **Settings** tab at the top of the side panel
+3. Scroll down until you see the **Networking** section
+4. Under **Public Networking**, click **Generate Domain**
+5. Railway creates a URL for you — it looks like:
+   `https://pingpong-production-abc123.up.railway.app`
+6. **Click the copy icon** next to that URL to copy it
+7. Now click the **Variables** tab again
+8. Find the `BASE_URL` variable you left blank, click the **pencil icon** to edit it, paste your URL, and press **Enter** to save
+
+#### Step 2C.7 — Trigger a fresh deployment
+
+Now that all variables are set, redeploy so the server starts with the correct configuration:
+
+1. Click the **Deployments** tab in the side panel
+2. Find the most recent deployment and click the **three-dot menu (⋯)** next to it
+3. Click **Redeploy**
+4. Wait for the deployment status to show a green **✓ Active** badge — this usually takes 1–3 minutes
+
+> If the deployment shows a red error, click on it to open the build logs. The most common cause is a missing environment variable — double-check that `DATABASE_URL`, `DASHBOARD_SECRET`, `NODE_ENV`, and `BASE_URL` are all saved in the Variables tab.
+
+#### Step 2C.8 — Verify the server is live
+
+Open your browser and visit:
+```
+https://YOUR-RAILWAY-URL/health
+```
+(Replace `YOUR-RAILWAY-URL` with the URL you generated in Step 2C.6.)
+
+You should see:
 ```json
 {"status":"ok","timestamp":"..."}
 ```
 
-If you see that — ✅ your server is running. Skip to **Step 3**.
+If you see that — ✅ your server is running and the database tables were created automatically. Skip to **Step 3**.
+
+> **If you see an error page instead:** Wait another 30 seconds and refresh — the server may still be starting up. If it persists, go back to Railway, click your service, open the **Logs** tab, and read the error message.
 
 ---
 
@@ -436,7 +490,7 @@ If you see that — ✅ your server is running.
 
 **Private VPS / Koyeb + Neon:** In [neon.tech](https://neon.tech) → your project → **Tables** tab → you should see `emails` and `open_events`.
 
-**Railway:** In Railway → click your **PostgreSQL** service → **Data** tab → you should see `emails` and `open_events` tables.
+**Railway:** In Railway → click your **PostgreSQL** service on the canvas → click the **Data** tab in the side panel → you should see `emails` and `open_events` tables.
 
 **Fly.io:** Run `flyctl postgres connect -a your-postgres-app-name` or check via the Fly.io dashboard.
 
@@ -523,7 +577,7 @@ You should see the email in the list with **Open Count: 1**. Click it for the fu
 | All opens show "Mountain View, CA" | Recipient is on Gmail — Google proxies the pixel through their servers. Expected. |
 | Dashboard shows "Unauthorized" | The `?key=` in your URL doesn't exactly match `DASHBOARD_SECRET` on the server. |
 | No emails appear in the dashboard | The extension may not have detected the Send button. Check the browser console on mail.google.com for `[PingPong]` log messages. |
-| Railway/Fly.io/Koyeb/VPS setup failed | Check the build/setup logs. Most common cause: `DATABASE_URL` not set correctly, or (for Koyeb) the **Service root** is not set to `server`. |
+| Railway/Fly.io/Koyeb/VPS setup failed | Check the build/deploy logs on your platform. Most common causes: `DATABASE_URL` not set, `BASE_URL` missing, or (for Koyeb) the **Service root** is not set to `server`. For Railway, open your service → **Deployments** tab → click the failed deploy → read the log. |
 
 ---
 
@@ -531,12 +585,13 @@ You should see the email in the list with **Open Count: 1**. Click it for the fu
 
 | File | Purpose |
 |---|---|
-| `server/railway.json` | Railway deployment config — auto-runs migrations, sets start command |
+| `Dockerfile` | Root-level Docker build file — Railway detects this and uses it to build the server image |
+| `railway.json` | Root-level Railway config — tells Railway to use the `Dockerfile` builder |
 | `server/fly.toml` | Fly.io deployment config — auto-runs migrations via `release_command` |
 | `server/package.json` | `postinstall` script auto-runs `prisma generate` after `npm install` |
 | `extension/` | Chrome extension — load unpacked, configure via popup |
 
-All four config files/methods (PM2/Nginx, `railway.json`, `fly.toml`, and the Koyeb settings) coexist fine. Use whichever platform you deploy to — the others are simply ignored.
+All config files coexist fine. Use whichever platform you deploy to — the others are simply ignored.
 
 ---
 
