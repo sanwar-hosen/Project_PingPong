@@ -57,10 +57,11 @@ cd Project_PingPong
 
 ## Step 2 — Deploy the server
 
-You have two free hosting options. **Pick one.** Both work identically once set up. The only difference is the URL format your app gets:
+You have three hosting options. **Pick one.** All work identically once set up. The only difference is the URL format your app gets:
 
-- Railway: `https://your-app.up.railway.app`
-- Fly.io: `https://your-app.fly.dev`
+- **Option A — Railway:** `https://your-app.up.railway.app` *(may require credit card after trial)*
+- **Option B — Fly.io:** `https://your-app.fly.dev` *(requires credit card)*
+- **Option C — Koyeb + Neon:** `https://your-app.koyeb.app` ✅ **Recommended — no credit card on either service**
 
 ---
 
@@ -123,7 +124,7 @@ If you see that — ✅ your server is running. Skip to **Step 3**.
 
 ---
 
-### Option B — Fly.io (slightly more setup, but excellent performance)
+### Option B — Fly.io *(requires credit card — skip if you don't have one)*
 
 **Step 2B.1 — Create a Fly.io account**
 1. Go to [fly.io](https://fly.io) → **Get Started**
@@ -212,16 +213,93 @@ If you see that — ✅ your server is running.
 
 ---
 
-## Step 3 — Database migrations (Railway only)
+### Option C — Koyeb + Neon ✅ Recommended free option (no credit card on either)
 
-> **Fly.io users: skip this step.** Migrations run automatically during `flyctl deploy`.
+Koyeb hosts your Node.js app. Neon hosts your PostgreSQL database. They're separate services connected by a single connection string — this is a very common, reliable pattern.
 
-For Railway, migrations also run automatically on every deploy via the `buildCommand` in `railway.json`. You can verify the tables were created:
+**Step 2C.1 — Create a Neon account and database**
 
-1. In Railway → click your **PostgreSQL** service → **Data** tab
-2. You should see two tables: `emails` and `open_events`
+1. Go to [neon.tech](https://neon.tech) → **Sign Up** (GitHub login works)
+2. Click **New Project** → give it a name (e.g. `pingpong`) → click **Create Project**
+3. Neon creates a database and shows you a connection string. It looks like:
+   ```
+   postgresql://user:password@ep-something-abc123.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+4. **Copy this entire connection string** — you'll need it in Step 2C.4. Keep the tab open.
 
-If the tables aren't there after the first deploy, trigger a redeploy: Railway app service → **Deployments** → click the three dots on the latest deployment → **Redeploy**.
+> Neon's free tier gives you 0.5 GB storage and 190 compute hours/month. At your volume that's more than enough — forever.
+
+**Step 2C.2 — Create a Koyeb account**
+
+1. Go to [koyeb.com](https://koyeb.com) → **Get Started** → sign up (GitHub login works)
+2. No credit card required
+
+**Step 2C.3 — Push your code to GitHub** *(skip if already done)*
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/YOUR_USERNAME/pingpong.git
+git branch -M main
+git push -u origin main
+```
+
+**Step 2C.4 — Create the Koyeb service**
+
+1. In Koyeb → **Create Service** → **GitHub**
+2. Select your repository
+3. Koyeb asks for configuration:
+
+   | Setting | Value |
+   |---|---|
+   | **Builder** | Buildpack (auto-detected) |
+   | **Run command** | `node src/index.js` |
+   | **Build command** | `npm install && npx prisma generate && npx prisma migrate deploy` |
+   | **Service root** | `server` |
+   | **Port** | `3000` |
+   | **Instance type** | Free (nano) |
+
+4. Scroll down to **Environment variables** and add:
+
+   | Variable | Value |
+   |---|---|
+   | `DATABASE_URL` | The full Neon connection string you copied in Step 2C.1 |
+   | `DASHBOARD_SECRET` | A long random password (40+ chars). Generate at [randomkeygen.com](https://randomkeygen.com). **Write this down.** |
+   | `NODE_ENV` | `production` |
+   | `BASE_URL` | Leave blank for now — fill in after deploy |
+
+5. Click **Deploy**
+
+**Step 2C.5 — Get your Koyeb URL**
+
+1. After deploy completes, Koyeb shows you a URL in the format:
+   `https://pingpong-yourname-abc123.koyeb.app`
+2. **Copy this URL**
+3. Go back to your Koyeb service → **Settings** → **Environment variables** → set `BASE_URL` to this URL → **Redeploy**
+
+**Step 2C.6 — Verify the server is live**
+
+Visit `https://YOUR-KOYEB-URL/health` in your browser. You should see:
+```json
+{"status":"ok","timestamp":"..."}
+```
+
+If you see that — ✅ your server is running. The database tables were created automatically by the build command.
+
+---
+
+## Step 3 — Verify database tables
+
+> Migrations run automatically during every deploy for all three platforms. This step is just a sanity check.
+
+**Railway:** In Railway → click your **PostgreSQL** service → **Data** tab → you should see `emails` and `open_events` tables.
+
+**Fly.io:** Run `flyctl postgres connect -a your-postgres-app-name` or check via the Fly.io dashboard.
+
+**Koyeb + Neon:** In [neon.tech](https://neon.tech) → your project → **Tables** tab → you should see `emails` and `open_events`.
+
+If the tables aren't there, trigger a redeploy on your platform — the migration runs again and creates them.
 
 ---
 
@@ -304,7 +382,7 @@ You should see the email in the list with **Open Count: 1**. Click it for the fu
 | All opens show "Mountain View, CA" | Recipient is on Gmail — Google proxies the pixel through their servers. Expected. |
 | Dashboard shows "Unauthorized" | The `?key=` in your URL doesn't exactly match `DASHBOARD_SECRET` on the server. |
 | No emails appear in the dashboard | The extension may not have detected the Send button. Check the browser console on mail.google.com for `[PingPong]` log messages. |
-| Railway/Fly.io build failed | Check the build logs. Most common cause: `DATABASE_URL` not properly linked from the Postgres service. |
+| Railway/Fly.io/Koyeb build failed | Check the build logs on your platform. Most common cause: `DATABASE_URL` not set correctly, or (for Koyeb) the **Service root** is not set to `server`. |
 
 ---
 
@@ -317,7 +395,7 @@ You should see the email in the list with **Open Count: 1**. Click it for the fu
 | `server/package.json` | `postinstall` script auto-runs `prisma generate` after `npm install` |
 | `extension/` | Chrome extension — load unpacked, configure via popup |
 
-Both `railway.json` and `fly.toml` live in the repo simultaneously. Use whichever platform you deploy to — the other file is simply ignored.
+All three config files (`railway.json`, `fly.toml`, and the Koyeb settings you entered in the UI) coexist fine. Use whichever platform you deploy to — the others are simply ignored.
 
 ---
 
@@ -333,6 +411,7 @@ git push
 
 - **Railway:** auto-deploys from GitHub on every push (if you connected the repo)
 - **Fly.io:** run `flyctl deploy` from the `server/` folder
+- **Koyeb:** auto-deploys from GitHub on every push (if you connected the repo)
 
 Migrations run automatically on every deploy — you never need to run them manually.
 
